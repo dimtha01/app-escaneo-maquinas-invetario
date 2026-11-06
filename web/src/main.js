@@ -27,6 +27,13 @@ const state = {
   tiendaModalMode: null, // 'triage' | 'inventario' | 'edit' | null
   scanner: null,
   lastScanAt: 0,
+  /** Buffer pistola Bluetooth (teclado HID) */
+  wedge: {
+    buffer: '',
+    lastAt: 0,
+    timer: null,
+    bound: false,
+  },
   inventario: {
     items: [],
     totales: { registros: 0, cantidad: 0 },
@@ -1185,7 +1192,7 @@ async function startScanner() {
         state.lastScanAt = now;
         const codigo = String(decodedText || '').trim();
         if (!codigo) return;
-        beep();
+        playBeep();
         const input = document.getElementById('barcodeInput');
         if (input) input.value = codigo;
         buscarProducto(codigo);
@@ -1548,7 +1555,106 @@ function renderTriageView() {
   startScanner();
 }
 
+/** Pistola Bluetooth (HID): escribe muy rápido y suele terminar con Enter */
+const WEDGE_MAX_GAP_MS = 80;
+const WEDGE_IDLE_MS = 140;
+const WEDGE_MIN_LEN = 6;
+
+function clearWedgeTimer() {
+  if (state.wedge.timer) {
+    clearTimeout(state.wedge.timer);
+    state.wedge.timer = null;
+  }
+}
+
+function flushWedgeBuffer(source = 'idle') {
+  clearWedgeTimer();
+  const codigo = String(state.wedge.buffer || '').trim();
+  state.wedge.buffer = '';
+  if (codigo.length < WEDGE_MIN_LEN) return;
+  const input = document.getElementById('barcodeInput');
+  if (input) input.value = codigo;
+  buscarProducto(codigo);
+}
+
+function onBluetoothWedgeKeydown(e) {
+  if (state.view !== 'triage') return;
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+  const target = e.target;
+  const tag = target?.tagName;
+  const isBarcode = target?.id === 'barcodeInput';
+  const isOtherField =
+    /^(INPUT|TEXTAREA|SELECT)$/.test(tag || '') && !isBarcode;
+  // No interceptar tipeo lento en otros campos (tienda, estatus, etc.)
+  if (isOtherField) return;
+
+  const now = Date.now();
+
+  if (e.key === 'Enter') {
+    if (isBarcode) {
+      e.preventDefault();
+      clearWedgeTimer();
+      state.wedge.buffer = '';
+      buscarProducto(target.value);
+      return;
+    }
+    if (state.wedge.buffer.length >= WEDGE_MIN_LEN) {
+      e.preventDefault();
+      flushWedgeBuffer('enter');
+    }
+    return;
+  }
+
+  if (e.key.length !== 1) return;
+
+  // En el input: detección por ráfaga (pistola sin Enter) + Enter normal
+  if (isBarcode) {
+    const gap = now - state.wedge.lastAt;
+    if (gap > WEDGE_MAX_GAP_MS * 2) state.wedge.buffer = '';
+    state.wedge.buffer += e.key;
+    state.wedge.lastAt = now;
+    clearWedgeTimer();
+    state.wedge.timer = setTimeout(() => {
+      const value = document.getElementById('barcodeInput')?.value?.trim() || '';
+      // Solo auto-buscar si parece ráfaga de pistola (buffer ≈ valor y largo)
+      if (
+        value.length >= WEDGE_MIN_LEN &&
+        state.wedge.buffer.length >= WEDGE_MIN_LEN &&
+        value.endsWith(state.wedge.buffer.slice(-Math.min(8, state.wedge.buffer.length)))
+      ) {
+        state.wedge.buffer = '';
+        buscarProducto(value);
+      } else {
+        state.wedge.buffer = '';
+      }
+    }, WEDGE_IDLE_MS);
+    return;
+  }
+
+  // Sin foco en input: capturar teclas de la pistola a nivel documento
+  const gap = now - state.wedge.lastAt;
+  if (gap > WEDGE_MAX_GAP_MS && state.wedge.buffer.length) {
+    state.wedge.buffer = '';
+  }
+  e.preventDefault();
+  state.wedge.buffer += e.key;
+  state.wedge.lastAt = now;
+  clearWedgeTimer();
+  state.wedge.timer = setTimeout(() => flushWedgeBuffer('idle'), WEDGE_IDLE_MS);
+}
+
+function bindBluetoothScanner() {
+  if (state.wedge.bound) return;
+  document.addEventListener('keydown', onBluetoothWedgeKeydown, true);
+  state.wedge.bound = true;
+}
+
 function bindTriageEvents() {
+  bindBluetoothScanner();
+  // Mantener listo para pistola Bluetooth
+  queueMicrotask(() => document.getElementById('barcodeInput')?.focus());
+
   document.getElementById('flashToggle')?.addEventListener('click', (e) => {
     state.flashOn = !state.flashOn;
     const btn = e.currentTarget;
@@ -1580,12 +1686,7 @@ function bindTriageEvents() {
     buscarProducto(document.getElementById('barcodeInput')?.value);
   });
 
-  document.getElementById('barcodeInput')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      buscarProducto(e.currentTarget.value);
-    }
-  });
+  // Enter en input lo maneja onBluetoothWedgeKeydown (capture)
 
   document.getElementById('tiendaTrigger')?.addEventListener('click', (e) => {
     e.stopPropagation();
