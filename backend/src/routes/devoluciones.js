@@ -184,38 +184,42 @@ router.post('/', (req, res) => {
   const udm = String(UdM ?? producto?.udm ?? 'UND').trim() || 'UND';
 
   const sesion = getOrCreateSesionActiva();
-  const orden = getSiguienteOrden();
 
-  const result = db
-    .prepare(
-      `INSERT INTO devoluciones
-        (producto_id, codigo_escaneado, articulo, codigo_barra, itemdesc, cantidad, udm, sucursal_id, estatus_id, sesion_id, orden, notas)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      producto?.id ?? null,
-      codigoEscaneado,
-      articulo,
-      codigoBarra,
-      itemdesc,
-      Number.isFinite(cantidad) ? cantidad : 1,
-      udm,
-      sucursal.id,
-      estatus.id,
-      sesion.id,
-      orden,
-      notas ?? null
-    );
+  // Orden = id autoincremental de SQLite (compartido por todos los dispositivos).
+  const insertConOrden = db.transaction(() => {
+    const result = db
+      .prepare(
+        `INSERT INTO devoluciones
+          (producto_id, codigo_escaneado, articulo, codigo_barra, itemdesc, cantidad, udm, sucursal_id, estatus_id, sesion_id, orden, notas)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`
+      )
+      .run(
+        producto?.id ?? null,
+        codigoEscaneado,
+        articulo,
+        codigoBarra,
+        itemdesc,
+        Number.isFinite(cantidad) ? cantidad : 1,
+        udm,
+        sucursal.id,
+        estatus.id,
+        sesion.id,
+        notas ?? null
+      );
+    const id = Number(result.lastInsertRowid);
+    db.prepare(`UPDATE devoluciones SET orden = id WHERE id = ?`).run(id);
+    return { orden: id, id };
+  });
 
-  const devolucion = db
-    .prepare(`${listSql} WHERE d.id = ?`)
-    .get(result.lastInsertRowid);
+  const { orden, id } = insertConOrden();
+
+  const devolucion = db.prepare(`${listSql} WHERE d.id = ?`).get(id);
 
   res.status(201).json({
     devolucion,
     orden,
     sesion_id: sesion.id,
-    siguiente_orden: orden + 1,
+    siguiente_orden: getSiguienteOrden(),
     bahia: sucursal.bahia,
     mensaje: `#${orden} guardado en ${sucursal.nombre}.`,
   });

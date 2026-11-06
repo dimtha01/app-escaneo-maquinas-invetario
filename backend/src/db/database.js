@@ -103,8 +103,28 @@ if (!devolucionCols.includes('sesion_id')) {
 
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_devoluciones_sesion_orden
-  ON devoluciones(sesion_id, orden)
+  ON devoluciones(sesion_id, orden);
+
+  CREATE TABLE IF NOT EXISTS contador_orden (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    siguiente INTEGER NOT NULL DEFAULT 1
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_devoluciones_orden_unique
+  ON devoluciones(orden)
+  WHERE orden IS NOT NULL;
 `);
+
+// Contador global compartido por todos los dispositivos (una sola secuencia)
+const contador = db.prepare('SELECT siguiente FROM contador_orden WHERE id = 1').get();
+if (!contador) {
+  const maxOrden = db
+    .prepare(`SELECT COALESCE(MAX(orden), 0) AS max_orden FROM devoluciones`)
+    .get();
+  db.prepare(
+    `INSERT INTO contador_orden (id, siguiente) VALUES (1, ?)`
+  ).run(Number(maxOrden?.max_orden || 0) + 1);
+}
 
 function ensureTiendasT01T49() {
   // Desactivar tiendas viejas que no sean T01-T49

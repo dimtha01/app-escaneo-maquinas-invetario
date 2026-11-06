@@ -847,7 +847,7 @@ function renderTriageView() {
       <div class="px-gutter pb-space-sm">
         <div class="bg-primary text-on-primary rounded-xl px-3 py-2.5 shadow-md flex items-center justify-between gap-2 mb-2">
           <div class="min-w-0">
-            <p class="font-label-sm text-label-sm opacity-90">Orden de escaneo</p>
+            <p class="font-label-sm text-label-sm opacity-90">Orden compartido</p>
             <p id="sesionMetaTop" class="font-body-sm text-body-sm opacity-80 truncate">Próximo registro #1</p>
           </div>
           <span id="sesionOrdenBadgeTop" class="bg-on-primary text-primary font-code-md text-code-md min-w-12 h-12 px-2 rounded-xl flex items-center justify-center font-black text-2xl leading-none shrink-0">#1</span>

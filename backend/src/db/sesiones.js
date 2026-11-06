@@ -1,5 +1,10 @@
 import { getDb } from './database.js';
 
+/**
+ * Orden autoincremental global (= id de devoluciones).
+ * Todos los dispositivos comparten la misma secuencia en el mismo backend.
+ */
+
 export function getSesionActiva() {
   const db = getDb();
   return db
@@ -13,7 +18,6 @@ export function getSesionActiva() {
     .get();
 }
 
-/** Una sola sesión permanente (sin terminar por ahora). */
 export function getOrCreateSesionActiva() {
   const db = getDb();
   let sesion = getSesionActiva();
@@ -23,19 +27,17 @@ export function getOrCreateSesionActiva() {
     .prepare(`INSERT INTO sesiones_escaneo (activa) VALUES (1)`)
     .run();
 
-  sesion = db
+  return db
     .prepare(`SELECT * FROM sesiones_escaneo WHERE id = ?`)
     .get(result.lastInsertRowid);
-
-  return sesion;
 }
 
-/** Orden correlativo global (una sola secuencia). */
+/** Próximo orden autoincremental (siguiente id). */
 export function getSiguienteOrden() {
   const db = getDb();
   const row = db
     .prepare(
-      `SELECT COALESCE(MAX(orden), 0) + 1 AS siguiente
+      `SELECT COALESCE(MAX(id), 0) + 1 AS siguiente
        FROM devoluciones`
     )
     .get();
@@ -48,7 +50,7 @@ export function getResumenOrden() {
     .prepare(
       `SELECT
          COUNT(*) AS total,
-         COALESCE(MAX(orden), 0) AS ultimo_orden
+         COALESCE(MAX(id), 0) AS ultimo_orden
        FROM devoluciones`
     )
     .get();
@@ -56,20 +58,18 @@ export function getResumenOrden() {
   return {
     total: Number(row?.total || 0),
     ultimo_orden: Number(row?.ultimo_orden || 0),
-    siguiente_orden: Number(row?.ultimo_orden || 0) + 1,
+    siguiente_orden: getSiguienteOrden(),
   };
 }
 
-/** @deprecated Por ahora no se usan múltiples sesiones. */
 export function getResumenSesion(_sesionId) {
   return getResumenOrden();
 }
 
-/** @deprecated Por ahora no se terminan sesiones. */
 export function terminarSesionActiva() {
   return {
     ok: false,
     terminada: false,
-    message: 'Por ahora solo hay una secuencia continua; no se termina la sesión.',
+    message: 'No hay sesiones: el orden es autoincremental y compartido.',
   };
 }
