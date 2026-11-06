@@ -200,7 +200,7 @@ function renderHistorial() {
   list.innerHTML = state.historialHoy
     .map(
       (item) => `
-      <div class="flex items-center justify-between p-2 rounded-lg bg-surface-container-low gap-2">
+      <div class="flex items-center justify-between p-2 rounded-lg bg-surface-container-low gap-2" data-devolucion-id="${escapeHtml(item.id)}">
         <div class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-code-sm text-code-sm font-bold shrink-0">
           ${escapeHtml(item.orden ?? '—')}
         </div>
@@ -218,15 +218,42 @@ function renderHistorial() {
             ${escapeHtml(`${item.Cantidad ?? 1} ${item.UdM || 'UND'} · ${item.sucursal_codigo || item.sucursal_nombre || ''}`)}
           </span>
         </div>
-        <div class="flex flex-col items-end shrink-0 ml-2">
+        <div class="flex flex-col items-end shrink-0 ml-1 gap-1">
           <span class="font-code-sm text-code-sm text-secondary font-medium">${escapeHtml(formatTime(item.creado_en))}</span>
           <span class="text-[10px] text-error font-semibold uppercase tracking-wide">
             ${escapeHtml(item.estatus_nombre || 'Sin estatus')}
           </span>
+          <button type="button" class="deleteDevolucionBtn h-8 w-8 rounded-lg text-error hover:bg-error-container/30 flex items-center justify-center" data-id="${escapeHtml(item.id)}" data-orden="${escapeHtml(item.orden ?? item.id)}" aria-label="Eliminar #${escapeHtml(item.orden ?? item.id)}">
+            <span class="material-symbols-outlined text-[18px]">delete</span>
+          </button>
         </div>
       </div>`
     )
     .join('');
+
+  list.querySelectorAll('.deleteDevolucionBtn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      eliminarDevolucion(btn.dataset.id, btn.dataset.orden);
+    });
+  });
+}
+
+async function eliminarDevolucion(id, orden) {
+  const label = orden ? `#${orden}` : `id ${id}`;
+  if (!window.confirm(`¿Eliminar el registro ${label}?`)) return;
+
+  try {
+    const result = await api.devoluciones.remove(id);
+    showToast(result.mensaje || `Eliminado ${label}`);
+    state.historialHoy = await api.devoluciones.hoy();
+    renderHistorial();
+    await loadSesion();
+    if (state.view === 'inventario') {
+      await loadInventario();
+    }
+  } catch (err) {
+    showToast(err.message || 'No se pudo eliminar.');
+  }
 }
 
 function renderSesionBadge() {
@@ -739,7 +766,7 @@ function renderInventarioList() {
   list.innerHTML = state.inventario.items
     .map(
       (item) => `
-    <article class="bg-surface-container-lowest rounded-xl p-3 shadow-sm border border-surface-container-low flex flex-col gap-2">
+    <article class="bg-surface-container-lowest rounded-xl p-3 shadow-sm border border-surface-container-low flex flex-col gap-2" data-devolucion-id="${escapeHtml(item.id)}">
       <div class="flex items-start justify-between gap-2">
         <div class="flex items-start gap-2 min-w-0 flex-1">
           <div class="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center font-code-md text-code-md font-bold shrink-0">
@@ -752,9 +779,15 @@ function renderInventarioList() {
             </p>
           </div>
         </div>
-        <span class="shrink-0 font-code-sm text-code-sm bg-primary-fixed text-on-primary-fixed px-2 py-0.5 rounded-full font-semibold">
-          ${escapeHtml(item.sucursal_codigo || '—')}
-        </span>
+        <div class="flex flex-col items-end gap-1 shrink-0">
+          <span class="font-code-sm text-code-sm bg-primary-fixed text-on-primary-fixed px-2 py-0.5 rounded-full font-semibold">
+            ${escapeHtml(item.sucursal_codigo || '—')}
+          </span>
+          <button type="button" class="deleteDevolucionBtn h-9 px-2 rounded-lg text-error hover:bg-error-container/30 flex items-center gap-1 font-label-sm text-label-sm" data-id="${escapeHtml(item.id)}" data-orden="${escapeHtml(item.orden ?? item.id)}" aria-label="Eliminar #${escapeHtml(item.orden ?? item.id)}">
+            <span class="material-symbols-outlined text-[18px]">delete</span>
+            Eliminar
+          </button>
+        </div>
       </div>
       <div class="grid grid-cols-2 gap-2 text-on-surface-variant">
         <div class="rounded-lg bg-surface-container-low px-2.5 py-2">
@@ -777,6 +810,12 @@ function renderInventarioList() {
     </article>`
     )
     .join('');
+
+  list.querySelectorAll('.deleteDevolucionBtn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      eliminarDevolucion(btn.dataset.id, btn.dataset.orden);
+    });
+  });
 }
 
 function renderInventarioView() {

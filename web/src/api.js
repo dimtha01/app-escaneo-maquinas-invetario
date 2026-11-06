@@ -38,6 +38,8 @@ export const api = {
     countHoy: () => request('/api/devoluciones/hoy/count'),
     create: (payload) =>
       request('/api/devoluciones', { method: 'POST', body: JSON.stringify(payload) }),
+    remove: (id) =>
+      request(`/api/devoluciones/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     inventario: ({ q = '', sucursalId = '' } = {}) => {
       const params = new URLSearchParams();
       if (q) params.set('q', q);

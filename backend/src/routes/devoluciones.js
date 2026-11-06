@@ -185,13 +185,14 @@ router.post('/', (req, res) => {
 
   const sesion = getOrCreateSesionActiva();
 
-  // Orden = id autoincremental de SQLite (compartido por todos los dispositivos).
+  // Orden correlativo: rellena huecos (si borras #2, el próximo usa #2).
   const insertConOrden = db.transaction(() => {
+    const orden = getSiguienteOrden();
     const result = db
       .prepare(
         `INSERT INTO devoluciones
           (producto_id, codigo_escaneado, articulo, codigo_barra, itemdesc, cantidad, udm, sucursal_id, estatus_id, sesion_id, orden, notas)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         producto?.id ?? null,
@@ -204,14 +205,24 @@ router.post('/', (req, res) => {
         sucursal.id,
         estatus.id,
         sesion.id,
+        orden,
         notas ?? null
       );
-    const id = Number(result.lastInsertRowid);
-    db.prepare(`UPDATE devoluciones SET orden = id WHERE id = ?`).run(id);
-    return { orden: id, id };
+    return { orden, id: Number(result.lastInsertRowid) };
   });
 
-  const { orden, id } = insertConOrden();
+  let created;
+  try {
+    created = insertConOrden();
+  } catch (err) {
+    if (String(err?.message || '').includes('UNIQUE')) {
+      created = insertConOrden();
+    } else {
+      throw err;
+    }
+  }
+
+  const { orden, id } = created;
 
   const devolucion = db.prepare(`${listSql} WHERE d.id = ?`).get(id);
 
@@ -222,6 +233,32 @@ router.post('/', (req, res) => {
     siguiente_orden: getSiguienteOrden(),
     bahia: sucursal.bahia,
     mensaje: `#${orden} guardado en ${sucursal.nombre}.`,
+  });
+});
+
+router.delete('/:id', (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) {
+    return res.status(400).json({ error: 'id inválido' });
+  }
+
+  const db = getDb();
+  const existing = db
+    .prepare(`${listSql} WHERE d.id = ?`)
+    .get(id);
+
+  if (!existing) {
+    return res.status(404).json({ error: 'Registro no encontrado' });
+  }
+
+  db.prepare(`DELETE FROM devoluciones WHERE id = ?`).run(id);
+
+  res.json({
+    ok: true,
+    id,
+    orden: existing.orden,
+    mensaje: `Eliminado #${existing.orden ?? id}.`,
+    siguiente_orden: getSiguienteOrden(),
   });
 });
 

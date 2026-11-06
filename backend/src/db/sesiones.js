@@ -1,8 +1,8 @@
 import { getDb } from './database.js';
 
 /**
- * Orden autoincremental global (= id de devoluciones).
- * Todos los dispositivos comparten la misma secuencia en el mismo backend.
+ * Orden correlativo compartido (1,2,3…).
+ * Si se elimina un número (ej. #2), el próximo registro reutiliza ese hueco.
  */
 
 export function getSesionActiva() {
@@ -32,16 +32,30 @@ export function getOrCreateSesionActiva() {
     .get(result.lastInsertRowid);
 }
 
-/** Próximo orden autoincremental (siguiente id). */
+/** Primer hueco libre (o max+1). Ej: [1,3] → 2. */
 export function getSiguienteOrden() {
   const db = getDb();
-  const row = db
+  const rows = db
     .prepare(
-      `SELECT COALESCE(MAX(id), 0) + 1 AS siguiente
-       FROM devoluciones`
+      `SELECT orden
+       FROM devoluciones
+       WHERE orden IS NOT NULL
+       ORDER BY orden ASC`
     )
-    .get();
-  return Number(row?.siguiente || 1);
+    .all();
+
+  let expected = 1;
+  for (const row of rows) {
+    const n = Number(row.orden);
+    if (!Number.isFinite(n) || n < expected) continue;
+    if (n === expected) {
+      expected += 1;
+      continue;
+    }
+    // Hueco encontrado
+    break;
+  }
+  return expected;
 }
 
 export function getResumenOrden() {
@@ -50,7 +64,7 @@ export function getResumenOrden() {
     .prepare(
       `SELECT
          COUNT(*) AS total,
-         COALESCE(MAX(id), 0) AS ultimo_orden
+         COALESCE(MAX(orden), 0) AS ultimo_orden
        FROM devoluciones`
     )
     .get();
@@ -70,6 +84,6 @@ export function terminarSesionActiva() {
   return {
     ok: false,
     terminada: false,
-    message: 'No hay sesiones: el orden es autoincremental y compartido.',
+    message: 'No hay sesiones: el orden es compartido y reutiliza huecos.',
   };
 }
