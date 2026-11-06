@@ -2,3 +2,141 @@
 body {
   -webkit-font-smoothing: antialiased;
 }
+
+/* Tabla inventario: N° y Código fijos al deslizar */
+.inv-sticky-n {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: #ffffff;
+  min-width: 3rem;
+  width: 3rem;
+}
+
+.inv-sticky-codigo {
+  position: sticky;
+  left: 3rem;
+  z-index: 2;
+  background: #ffffff;
+  min-width: 6.5rem;
+  max-width: 7.5rem;
+  box-shadow: 4px 0 8px -4px rgba(11, 28, 48, 0.18);
+}
+
+thead .inv-sticky-n,
+thead .inv-sticky-codigo {
+  z-index: 4;
+  background: #e8eef8;
+}
+
+#inventarioTableWrap,
+#inventarioList,
+#inventarioTableScroll,
+#historialTableWrap,
+#historialList,
+#historialTableScroll {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+#inventarioTableScroll {
+  -webkit-overflow-scrolling: touch;
+}
+
+#inventarioTotalesBar .inv-excel-total-label {
+  min-width: 3.5rem;
+}
+
+/* Cámara triage: video a pantalla completa del recuadro */
+#scannerRegion {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+#scannerRegion video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: center center !important;
+  display: block !important;
+}
+
+.barcode-scanner-slot {
+  height: 160px;
+  min-height: 140px;
+  max-height: 180px;
+}
+
+#scannerRegion #qr-shaded-region {
+  box-sizing: border-box;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Guía visual tamaño código de barras (franja ancha y baja) */
+.barcode-guide {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  box-sizing: border-box;
+  border: 1.5px solid rgba(13, 91, 255, 0.55);
+  border-radius: 4px;
+}
+
+.barcode-guide-corner {
+  position: absolute;
+  width: 18px;
+  height: 14px;
+  border-color: #0d5bff;
+  border-style: solid;
+}
+
+.barcode-guide-corner.tl {
+  top: -2px;
+  left: -2px;
+  border-width: 3px 0 0 3px;
+  border-radius: 3px 0 0 0;
+}
+
+.barcode-guide-corner.tr {
+  top: -2px;
+  right: -2px;
+  border-width: 3px 3px 0 0;
+  border-radius: 0 3px 0 0;
+}
+
+.barcode-guide-corner.bl {
+  bottom: -2px;
+  left: -2px;
+  border-width: 0 0 3px 3px;
+  border-radius: 0 0 0 3px;
+}
+
+.barcode-guide-corner.br {
+  bottom: -2px;
+  right: -2px;
+  border-width: 0 3px 3px 0;
+  border-radius: 0 0 3px 0;
+}
+
+.barcode-guide-laser {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  background: #0d5bff;
+  box-shadow: 0 0 10px #0d5bff;
+  animation: barcode-laser 1.4s ease-in-out infinite;
+}
+
+@keyframes barcode-laser {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}

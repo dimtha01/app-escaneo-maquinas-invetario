@@ -38,6 +38,11 @@ export const api = {
     countHoy: () => request('/api/devoluciones/hoy/count'),
     create: (payload) =>
       request('/api/devoluciones', { method: 'POST', body: JSON.stringify(payload) }),
+    update: (id, payload) =>
+      request(`/api/devoluciones/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }),
     remove: (id) =>
       request(`/api/devoluciones/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     inventario: ({ q = '', sucursalId = '' } = {}) => {
@@ -47,8 +52,5 @@ export const api = {
       const qs = params.toString();
       return request(`/api/devoluciones/inventario${qs ? `?${qs}` : ''}`);
     },
-  },
-  sesiones: {
-    activa: () => request('/api/sesiones/activa'),
   },
 };

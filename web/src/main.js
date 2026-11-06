@@ -1,6 +1,16 @@
 import './style.css';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { api } from './api.js';
+
+/** Formatos de código de barras retail → lectura más rápida */
+const BARCODE_FORMATS = [
+  Html5QrcodeSupportedFormats.EAN_13,
+  Html5QrcodeSupportedFormats.EAN_8,
+  Html5QrcodeSupportedFormats.UPC_A,
+  Html5QrcodeSupportedFormats.UPC_E,
+  Html5QrcodeSupportedFormats.CODE_128,
+  Html5QrcodeSupportedFormats.CODE_39,
+];
 
 const state = {
   view: 'triage',
@@ -13,7 +23,8 @@ const state = {
   historialHoy: [],
   selectedEstatusId: null,
   selectedTiendaId: null,
-  openMenu: null, // 'status' | 'tienda' | 'invTienda' | null
+  openMenu: null, // 'status' | null
+  tiendaModalMode: null, // 'triage' | 'inventario' | 'edit' | null
   scanner: null,
   lastScanAt: 0,
   inventario: {
@@ -23,12 +34,18 @@ const state = {
     sucursalId: '',
     loading: false,
   },
-  sesion: {
-    activa: false,
-    sesionId: null,
-    siguiente_orden: 1,
-    total: 0,
-    ultimo_orden: 0,
+  edit: {
+    id: null,
+    orden: null,
+    sucursalId: null,
+    estatusId: null,
+    cantidad: 1,
+    notas: '',
+    itemdesc: '',
+    codigo: '',
+    articulo: '',
+    udm: 'UND',
+    productoPreview: null,
   },
 };
 
@@ -177,6 +194,100 @@ function estatusModalHtml() {
   </div>`;
 }
 
+function tiendaModalHtml() {
+  return `
+  <div id="tiendaModal" class="hidden fixed inset-0 z-[80] items-end sm:items-center justify-center bg-on-surface/40 backdrop-blur-[2px] p-gutter">
+    <div class="w-full max-w-lg max-h-[85vh] bg-surface-container-lowest rounded-xl shadow-xl flex flex-col overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="tiendaModalTitle">
+      <div class="flex items-start justify-between gap-2 p-space-md pb-2 shrink-0">
+        <div class="min-w-0">
+          <h2 id="tiendaModalTitle" class="font-headline-sm text-headline-sm text-on-surface">Seleccionar tienda</h2>
+          <p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Toca una tienda de la grilla</p>
+        </div>
+        <button type="button" id="closeTiendaModalBtn" class="w-8 h-8 rounded-full text-on-surface-variant hover:bg-surface-container flex items-center justify-center shrink-0" aria-label="Cerrar">
+          <span class="material-symbols-outlined text-[20px]">close</span>
+        </button>
+      </div>
+      <div id="tiendaModalGrid" class="px-space-md pb-space-md overflow-y-auto grid grid-cols-4 gap-2"></div>
+    </div>
+  </div>`;
+}
+
+function editDevolucionModalHtml() {
+  return `
+  <div id="editDevolucionModal" class="hidden fixed inset-0 z-[75] items-end sm:items-center justify-center bg-on-surface/40 backdrop-blur-[2px] p-gutter">
+    <div class="w-full max-w-md max-h-[90vh] overflow-y-auto bg-surface-container-lowest rounded-xl shadow-xl p-space-lg flex flex-col gap-space-md" role="dialog" aria-modal="true" aria-labelledby="editDevolucionTitle">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <h2 id="editDevolucionTitle" class="font-headline-sm text-headline-sm text-on-surface">Editar escaneo</h2>
+          <p id="editDevolucionSubtitle" class="font-body-sm text-body-sm text-on-surface-variant mt-0.5 truncate"></p>
+        </div>
+        <button type="button" id="closeEditDevolucionBtn" class="w-8 h-8 rounded-full text-on-surface-variant hover:bg-surface-container flex items-center justify-center shrink-0" aria-label="Cerrar">
+          <span class="material-symbols-outlined text-[20px]">close</span>
+        </button>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label for="editCodigo" class="font-label-sm text-label-sm text-on-surface-variant font-semibold flex items-center gap-1">
+          <span class="material-symbols-outlined text-primary text-[16px]">qr_code_2</span>
+          Código <span class="text-error">*</span>
+        </label>
+        <div class="flex items-center gap-2">
+          <input id="editCodigo" type="text" inputmode="numeric" autocomplete="off" class="flex-1 min-w-0 h-11 px-3 rounded-lg bg-surface-container-low border border-outline-variant font-code-md text-code-md text-on-surface focus:outline-none focus:border-primary" placeholder="Código de barras / artículo" />
+          <button type="button" id="editBuscarCodigoBtn" class="h-11 px-3 rounded-lg bg-primary text-on-primary font-label-md text-label-md shrink-0 inline-flex items-center gap-1">
+            <span class="material-symbols-outlined text-[18px]">search</span>
+            Buscar
+          </button>
+        </div>
+      </div>
+
+      <div id="editProductoPreview" class="rounded-xl bg-surface-container-low border border-outline-variant p-3 flex flex-col gap-1.5">
+        <div class="flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-primary-container"></span>
+          <span class="font-label-sm text-label-sm text-primary font-bold">Producto</span>
+        </div>
+        <div id="editProductoNombre" class="font-headline-sm text-headline-sm text-on-surface truncate">—</div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-code-sm text-code-sm text-on-surface-variant">Art. <span id="editProductoArticulo">—</span></span>
+          <span id="editProductoCodigoBarra" class="font-code-sm text-code-sm bg-surface-container px-1.5 py-0.5 rounded-DEFAULT text-on-secondary-container">—</span>
+        </div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant">
+          Cantidad: <span id="editProductoCantidad">1</span> <span id="editProductoUdm">UND</span>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="font-label-sm text-label-sm text-on-surface-variant font-semibold flex items-center gap-1">
+          <span class="material-symbols-outlined text-primary text-[16px]">store</span>
+          Tienda <span class="text-error">*</span>
+        </label>
+        <button type="button" id="editTiendaBtn" class="w-full h-11 px-3 rounded-lg bg-surface-container-low border border-outline-variant flex items-center gap-2 text-left">
+          <span class="material-symbols-outlined text-[20px] text-on-surface-variant">store</span>
+          <span id="editTiendaLabel" class="flex-1 font-label-md text-label-md text-on-surface font-semibold truncate">Seleccionar tienda</span>
+          <span class="material-symbols-outlined text-[20px] text-on-surface-variant">grid_view</span>
+        </button>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="font-label-sm text-label-sm text-on-surface-variant font-semibold flex items-center gap-1">
+          <span class="material-symbols-outlined text-primary text-[16px]">assignment_return</span>
+          Estatus <span class="text-error">*</span>
+        </label>
+        ${pickerHtml({ key: 'editStatus', icon: 'report', placeholder: 'Seleccionar estatus' })}
+      </div>
+
+      <p id="editDevolucionError" class="hidden font-body-sm text-body-sm text-error"></p>
+
+      <div class="flex items-center gap-2 pt-1">
+        <button type="button" id="cancelEditDevolucionBtn" class="flex-1 h-11 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high">Cancelar</button>
+        <button type="button" id="saveEditDevolucionBtn" class="flex-1 h-11 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container flex items-center justify-center gap-1">
+          <span class="material-symbols-outlined text-[18px]">save</span>
+          Guardar
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
 /* ---------------- Triage helpers ---------------- */
 
 function renderHistorial() {
@@ -186,51 +297,86 @@ function renderHistorial() {
   if (!list) return;
 
   const total = state.historialHoy.length;
-  if (countBadge) countBadge.textContent = `${total} ítems`;
+  if (countBadge) countBadge.textContent = String(total);
   if (navBadge) navBadge.textContent = String(total);
 
   if (total === 0) {
     list.innerHTML = `
-      <div class="p-3 rounded-lg bg-surface-container-low text-on-surface-variant font-body-sm text-body-sm text-center">
-        Aún no hay devoluciones registradas hoy.
+      <div class="p-3 text-center text-on-surface-variant font-body-sm text-body-sm border-y border-outline-variant bg-surface-container-lowest">
+        Sin registros
       </div>`;
     return;
   }
 
-  list.innerHTML = state.historialHoy
-    .map(
-      (item) => `
-      <div class="flex items-center justify-between p-2 rounded-lg bg-surface-container-low gap-2" data-devolucion-id="${escapeHtml(item.id)}">
-        <div class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-code-sm text-code-sm font-bold shrink-0">
-          ${escapeHtml(item.orden ?? '—')}
-        </div>
-        <div class="flex flex-col min-w-0 flex-1">
-          <span class="font-label-md text-label-md text-on-surface font-semibold truncate">
-            ${escapeHtml(item.ITEMDESC || item.codigo_escaneado)}
-          </span>
-          <span class="font-code-sm text-code-sm text-on-surface-variant">
-            ${escapeHtml(
-              [item.Articulo, item.CodigoBarra].filter(Boolean).join(' · ') ||
-                item.codigo_escaneado
-            )}
-          </span>
-          <span class="font-code-sm text-code-sm text-secondary">
-            ${escapeHtml(`${item.Cantidad ?? 1} ${item.UdM || 'UND'} · ${item.sucursal_codigo || item.sucursal_nombre || ''}`)}
-          </span>
-        </div>
-        <div class="flex flex-col items-end shrink-0 ml-1 gap-1">
-          <span class="font-code-sm text-code-sm text-secondary font-medium">${escapeHtml(formatTime(item.creado_en))}</span>
-          <span class="text-[10px] text-error font-semibold uppercase tracking-wide">
-            ${escapeHtml(item.estatus_nombre || 'Sin estatus')}
-          </span>
-          <button type="button" class="deleteDevolucionBtn h-8 w-8 rounded-lg text-error hover:bg-error-container/30 flex items-center justify-center" data-id="${escapeHtml(item.id)}" data-orden="${escapeHtml(item.orden ?? item.id)}" aria-label="Eliminar #${escapeHtml(item.orden ?? item.id)}">
-            <span class="material-symbols-outlined text-[18px]">delete</span>
-          </button>
-        </div>
-      </div>`
-    )
+  const rows = state.historialHoy
+    .map((item) => {
+      const codigo = item.Articulo || '—';
+      const sku = item.CodigoBarra || item.codigo_escaneado || '—';
+      const desc = item.ITEMDESC || '—';
+      const tienda = item.sucursal_codigo || item.sucursal_nombre || '—';
+      const estatus = item.estatus_nombre || '—';
+      const n = item.orden ?? '—';
+      return `
+      <tr class="border-b border-surface-container-low hover:bg-surface-container-low/80" data-devolucion-id="${escapeHtml(item.id)}">
+        <td class="inv-sticky-n px-1 py-1.5 align-middle text-center border-r border-surface-container-high">
+          <span class="font-code-md text-code-md font-black text-on-surface tabular-nums">${escapeHtml(n)}</span>
+        </td>
+        <td class="inv-sticky-codigo px-1.5 py-1.5 align-middle border-r border-surface-container-high">
+          <div class="font-code-sm text-code-sm font-bold text-on-surface leading-tight">${escapeHtml(codigo)}</div>
+        </td>
+        <td class="px-1.5 py-1.5 align-middle min-w-[200px] max-w-[300px]">
+          <div class="font-label-md text-label-md text-on-surface font-medium truncate whitespace-nowrap">${escapeHtml(desc)}</div>
+        </td>
+        <td class="px-1.5 py-1.5 align-middle whitespace-nowrap">
+          <span class="font-code-sm text-code-sm font-bold text-on-surface">${escapeHtml(sku)}</span>
+        </td>
+        <td class="px-1.5 py-1.5 align-middle whitespace-nowrap">
+          <span class="inline-flex items-center rounded-md bg-primary-fixed text-on-primary-fixed px-1.5 py-0.5 font-code-sm text-code-sm font-bold">${escapeHtml(tienda)}</span>
+        </td>
+        <td class="px-1.5 py-1.5 align-middle min-w-[110px]">
+          <span class="font-label-sm text-label-sm text-on-surface font-semibold">${escapeHtml(estatus)}</span>
+        </td>
+        <td class="px-2 py-1.5 align-middle whitespace-nowrap text-right">
+          <div class="inline-flex items-center gap-0.5">
+            <button type="button" class="editDevolucionBtn h-8 w-8 rounded-lg text-primary hover:bg-primary-fixed/40 inline-flex items-center justify-center" data-id="${escapeHtml(item.id)}" aria-label="Editar #${escapeHtml(item.orden ?? item.id)}">
+              <span class="material-symbols-outlined text-[18px]">edit</span>
+            </button>
+            <button type="button" class="deleteDevolucionBtn h-8 w-8 rounded-lg text-error hover:bg-error-container/30 inline-flex items-center justify-center" data-id="${escapeHtml(item.id)}" data-orden="${escapeHtml(item.orden ?? item.id)}" aria-label="Eliminar #${escapeHtml(item.orden ?? item.id)}">
+              <span class="material-symbols-outlined text-[18px]">delete</span>
+            </button>
+          </div>
+        </td>
+      </tr>`;
+    })
     .join('');
 
+  list.innerHTML = `
+    <div id="historialTableWrap" class="m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden">
+      <div class="overflow-x-auto overscroll-x-contain touch-pan-x m-0 p-0" id="historialTableScroll">
+        <table class="w-full min-w-[700px] border-collapse text-left m-0" id="historialDataTable">
+          <thead>
+            <tr class="bg-surface-container">
+              <th class="inv-sticky-n px-1 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high text-center">N°</th>
+              <th class="inv-sticky-codigo px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high whitespace-nowrap">Código</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Descripción</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">SKU</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Tienda</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Estatus</th>
+              <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold w-16"></th>
+            </tr>
+          </thead>
+          <tbody class="bg-surface-container-lowest">
+            ${rows}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  list.querySelectorAll('.editDevolucionBtn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      openEditDevolucion(btn.dataset.id);
+    });
+  });
   list.querySelectorAll('.deleteDevolucionBtn').forEach((btn) => {
     btn.addEventListener('click', () => {
       eliminarDevolucion(btn.dataset.id, btn.dataset.orden);
@@ -240,14 +386,13 @@ function renderHistorial() {
 
 async function eliminarDevolucion(id, orden) {
   const label = orden ? `#${orden}` : `id ${id}`;
-  if (!window.confirm(`¿Eliminar el registro ${label}?`)) return;
+  if (!window.confirm(`¿Eliminar el escaneo ${label}?`)) return;
 
   try {
     const result = await api.devoluciones.remove(id);
     showToast(result.mensaje || `Eliminado ${label}`);
     state.historialHoy = await api.devoluciones.hoy();
     renderHistorial();
-    await loadSesion();
     if (state.view === 'inventario') {
       await loadInventario();
     }
@@ -256,41 +401,236 @@ async function eliminarDevolucion(id, orden) {
   }
 }
 
-function renderSesionBadge() {
-  const orden = state.sesion.siguiente_orden || 1;
-  const total = state.sesion.total || 0;
-  const metaText =
-    total > 0
-      ? `${total} registrados · próximo #${orden}`
-      : `Próximo registro #${orden}`;
-  const badge = document.getElementById('sesionOrdenBadgeTop');
-  const meta = document.getElementById('sesionMetaTop');
-  const saveLabel = document.getElementById('saveOrdenLabel');
-  if (badge) badge.textContent = `#${orden}`;
-  if (meta) meta.textContent = metaText;
-  if (saveLabel) saveLabel.textContent = `Registrar #${orden}`;
+function updateEditTiendaLabel() {
+  const label = document.getElementById('editTiendaLabel');
+  if (!label) return;
+  const sucursal = state.sucursales.find(
+    (s) => Number(s.id) === Number(state.edit.sucursalId)
+  );
+  label.textContent = sucursal
+    ? `${sucursal.codigo}${sucursal.nombre ? ` · ${sucursal.nombre}` : ''}`
+    : 'Seleccionar tienda';
 }
 
-async function loadSesion() {
-  try {
-    const data = await api.sesiones.activa();
-    state.sesion = {
-      activa: Boolean(data.activa),
-      sesionId: data.sesion?.id ?? null,
-      siguiente_orden: data.siguiente_orden || 1,
-      total: data.total || 0,
-      ultimo_orden: data.ultimo_orden || 0,
-    };
-  } catch {
-    state.sesion = {
-      activa: false,
-      sesionId: null,
-      siguiente_orden: 1,
-      total: 0,
-      ultimo_orden: 0,
-    };
+function renderEditProductoPreview() {
+  const nombre = document.getElementById('editProductoNombre');
+  const articulo = document.getElementById('editProductoArticulo');
+  const codigoBarra = document.getElementById('editProductoCodigoBarra');
+  const cantidad = document.getElementById('editProductoCantidad');
+  const udm = document.getElementById('editProductoUdm');
+  if (!nombre) return;
+  const p = state.edit.productoPreview;
+  nombre.textContent = p?.ITEMDESC || state.edit.itemdesc || '—';
+  articulo.textContent = p?.Articulo || state.edit.articulo || '—';
+  codigoBarra.textContent = p?.CodigoBarra || state.edit.codigo || '—';
+  cantidad.textContent = String(p?.Cantidad ?? state.edit.cantidad ?? 1);
+  udm.textContent = p?.UdM || state.edit.udm || 'UND';
+}
+
+function renderEditEstatusSelect() {
+  renderPickerMenu({
+    key: 'editStatus',
+    options: state.estatus.map((e) => ({
+      value: String(e.id),
+      label: e.nombre,
+      icon: e.icono || 'report',
+    })),
+    value: state.edit.estatusId ? String(state.edit.estatusId) : '',
+    placeholder: 'Seleccionar estatus',
+    defaultIcon: 'report',
+    onSelect: (v) => {
+      state.edit.estatusId = v == null || v === '' ? null : Number(v);
+      renderEditEstatusSelect();
+    },
+  });
+}
+
+async function buscarCodigoEnEdit() {
+  const codigo = String(document.getElementById('editCodigo')?.value || '').trim();
+  const err = document.getElementById('editDevolucionError');
+  if (!codigo) {
+    if (err) {
+      err.textContent = 'Escribe el código';
+      err.classList.remove('hidden');
+    }
+    return;
   }
-  renderSesionBadge();
+  try {
+    const producto = await api.productos.buscar(codigo);
+    state.edit.codigo = producto.CodigoBarra || codigo;
+    state.edit.articulo = producto.Articulo || '';
+    state.edit.itemdesc = producto.ITEMDESC || '';
+    state.edit.cantidad = Number(producto.Cantidad ?? 1);
+    state.edit.udm = producto.UdM || 'UND';
+    state.edit.productoPreview = producto;
+    const input = document.getElementById('editCodigo');
+    if (input) input.value = state.edit.codigo;
+    renderEditProductoPreview();
+    if (err) {
+      err.classList.add('hidden');
+      err.textContent = '';
+    }
+  } catch (e) {
+    state.edit.productoPreview = null;
+    renderEditProductoPreview();
+    if (err) {
+      err.textContent = e.status === 404 ? `No encontrado: ${codigo}` : e.message || 'Error al buscar';
+      err.classList.remove('hidden');
+    }
+  }
+}
+
+async function openEditDevolucion(id) {
+  const item =
+    state.inventario.items.find((x) => Number(x.id) === Number(id)) ||
+    state.historialHoy.find((x) => Number(x.id) === Number(id));
+  if (!item) {
+    showToast('No se encontró el escaneo');
+    return;
+  }
+  if (!state.sucursales.length || !state.estatus.length) {
+    try {
+      await loadCatalogos();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  state.edit = {
+    id: item.id,
+    orden: item.orden ?? item.id,
+    sucursalId: item.sucursal_id,
+    estatusId: item.estatus_id,
+    cantidad: Number(item.Cantidad ?? 1),
+    notas: item.notas || '',
+    itemdesc: item.ITEMDESC || '',
+    codigo: item.CodigoBarra || item.codigo_escaneado || '',
+    articulo: item.Articulo || '',
+    udm: item.UdM || 'UND',
+    productoPreview: {
+      Articulo: item.Articulo,
+      CodigoBarra: item.CodigoBarra || item.codigo_escaneado,
+      ITEMDESC: item.ITEMDESC,
+      Cantidad: item.Cantidad ?? 1,
+      UdM: item.UdM || 'UND',
+    },
+  };
+
+  const modal = document.getElementById('editDevolucionModal');
+  if (!modal) return;
+
+  const subtitle = document.getElementById('editDevolucionSubtitle');
+  if (subtitle) {
+    subtitle.textContent = `#${state.edit.orden}`;
+  }
+  const codigoInput = document.getElementById('editCodigo');
+  if (codigoInput) codigoInput.value = state.edit.codigo;
+  const err = document.getElementById('editDevolucionError');
+  if (err) {
+    err.classList.add('hidden');
+    err.textContent = '';
+  }
+
+  renderEditProductoPreview();
+  renderEditEstatusSelect();
+  updateEditTiendaLabel();
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+  codigoInput?.focus();
+}
+
+function closeEditDevolucion() {
+  const modal = document.getElementById('editDevolucionModal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+  state.edit.id = null;
+}
+
+async function saveEditDevolucion() {
+  if (!state.edit.id) return;
+  const err = document.getElementById('editDevolucionError');
+  const showErr = (msg) => {
+    if (!err) return;
+    err.textContent = msg;
+    err.classList.remove('hidden');
+  };
+
+  const codigo = String(document.getElementById('editCodigo')?.value || '').trim();
+  const sucursalId = Number(state.edit.sucursalId);
+  const estatusId = Number(
+    document.getElementById('editStatusSelect')?.value || state.edit.estatusId
+  );
+  const preview = state.edit.productoPreview;
+
+  if (!codigo) {
+    showErr('Escribe el código');
+    return;
+  }
+  if (!Number.isFinite(sucursalId) || sucursalId <= 0) {
+    showErr('Selecciona una tienda');
+    return;
+  }
+  if (!Number.isFinite(estatusId) || estatusId <= 0) {
+    showErr('Selecciona un estatus');
+    return;
+  }
+
+  const saveBtn = document.getElementById('saveEditDevolucionBtn');
+  if (saveBtn) saveBtn.disabled = true;
+  try {
+    const result = await api.devoluciones.update(state.edit.id, {
+      codigo,
+      CodigoBarra: preview?.CodigoBarra || codigo,
+      Articulo: preview?.Articulo ?? state.edit.articulo,
+      ITEMDESC: preview?.ITEMDESC ?? state.edit.itemdesc,
+      Cantidad: preview?.Cantidad ?? state.edit.cantidad,
+      UdM: preview?.UdM ?? state.edit.udm,
+      sucursal_id: sucursalId,
+      estatus_id: estatusId,
+    });
+    closeEditDevolucion();
+    showToast(result.mensaje || 'Guardado');
+    if (state.view === 'inventario') {
+      await loadInventario();
+    } else {
+      state.historialHoy = await api.devoluciones.hoy();
+      renderHistorial();
+    }
+  } catch (e) {
+    showErr(e.message || 'No se pudo guardar');
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+function bindEditDevolucionEvents() {
+  document.getElementById('closeEditDevolucionBtn')?.addEventListener('click', closeEditDevolucion);
+  document.getElementById('cancelEditDevolucionBtn')?.addEventListener('click', closeEditDevolucion);
+  document.getElementById('saveEditDevolucionBtn')?.addEventListener('click', () => {
+    saveEditDevolucion();
+  });
+  document.getElementById('editBuscarCodigoBtn')?.addEventListener('click', () => {
+    buscarCodigoEnEdit();
+  });
+  document.getElementById('editCodigo')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      buscarCodigoEnEdit();
+    }
+  });
+  document.getElementById('editTiendaBtn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openTiendaModal('edit');
+  });
+  document.getElementById('editStatusTrigger')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleMenu('editStatus');
+  });
+  document.getElementById('editDevolucionModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'editDevolucionModal') closeEditDevolucion();
+  });
 }
 
 function renderProductoCard() {
@@ -301,7 +641,7 @@ function renderProductoCard() {
   if (!state.producto) {
     card.classList.add('hidden');
     card.classList.remove('flex');
-    empty.classList.remove('hidden');
+    empty.classList.add('hidden');
     return;
   }
 
@@ -319,7 +659,7 @@ function renderProductoCard() {
   document.getElementById('productoUdm').textContent = state.producto.UdM || 'UND';
 }
 
-function pickerHtml({ key, icon = 'list', placeholder = 'Seleccionar' }) {
+function pickerHtml({ key, icon = 'list', placeholder = 'Seleccionar', modal = false }) {
   return `
     <div class="relative w-full" data-picker="${key}">
       <input type="hidden" id="${key}Select" value="" />
@@ -327,23 +667,27 @@ function pickerHtml({ key, icon = 'list', placeholder = 'Seleccionar' }) {
         type="button"
         id="${key}Trigger"
         class="w-full h-10 px-3 rounded-lg bg-surface-container-low border border-outline-variant flex items-center gap-2 text-left focus:outline-none focus:border-primary hover:bg-surface-container transition-colors"
-        aria-haspopup="listbox"
+        aria-haspopup="${modal ? 'dialog' : 'listbox'}"
         aria-expanded="false"
       >
         <span id="${key}TriggerIcon" class="material-symbols-outlined text-[18px] text-on-surface-variant shrink-0">${escapeHtml(icon)}</span>
         <span id="${key}TriggerLabel" class="flex-1 min-w-0 font-label-md text-label-md font-semibold text-on-surface truncate">${escapeHtml(placeholder)}</span>
-        <span id="${key}TriggerChevron" class="material-symbols-outlined text-[20px] text-on-surface-variant shrink-0">expand_more</span>
+        <span id="${key}TriggerChevron" class="material-symbols-outlined text-[20px] text-on-surface-variant shrink-0">${modal ? 'grid_view' : 'expand_more'}</span>
       </button>
-      <div
+      ${
+        modal
+          ? ''
+          : `<div
         id="${key}Menu"
         class="hidden absolute left-0 right-0 top-[calc(100%+4px)] z-40 max-h-56 overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-lowest shadow-lg py-1"
         role="listbox"
-      ></div>
+      ></div>`
+      }
     </div>`;
 }
 
 function closeAllMenus() {
-  ['status', 'tienda', 'invTienda'].forEach((key) => {
+  ['status', 'editStatus'].forEach((key) => {
     document.getElementById(`${key}Menu`)?.classList.add('hidden');
     const chevron = document.getElementById(`${key}TriggerChevron`);
     if (chevron) chevron.textContent = 'expand_more';
@@ -457,25 +801,28 @@ function renderEstatusSelect() {
   });
 }
 
-function tiendaOptions({ includeAll = false } = {}) {
-  const options = [];
-  if (includeAll) {
-    options.push({ value: '', label: 'Todas las tiendas', icon: 'storefront' });
-  }
-  for (const s of state.sucursales) {
-    options.push({
-      value: String(s.id),
-      label: `${s.codigo} — ${s.nombre}`,
-      icon: 'store',
-    });
-  }
-  return options;
-}
-
 function selectTienda(id) {
   state.selectedTiendaId = id == null || id === '' ? null : Number(id);
   renderTiendaSelect();
   updateBahiaHint();
+}
+
+function updateTiendaTrigger(key, { value, placeholder, defaultIcon }) {
+  const triggerLabel = document.getElementById(`${key}TriggerLabel`);
+  const triggerIcon = document.getElementById(`${key}TriggerIcon`);
+  const hidden = document.getElementById(`${key}Select`);
+  if (!triggerLabel || !hidden) return;
+
+  hidden.value = value == null || value === '' ? '' : String(value);
+  const selected = state.sucursales.find((s) => String(s.id) === String(value));
+  if (triggerIcon) triggerIcon.textContent = selected ? 'store' : defaultIcon;
+  if (value === '' && key === 'invTienda') {
+    triggerLabel.textContent = 'Todas las tiendas';
+  } else {
+    triggerLabel.textContent = selected
+      ? `${selected.codigo} — ${selected.nombre}`
+      : placeholder;
+  }
 }
 
 function renderTiendaSelect() {
@@ -487,28 +834,121 @@ function renderTiendaSelect() {
     state.selectedTiendaId = null;
   }
 
-  renderPickerMenu({
-    key: 'tienda',
-    options: tiendaOptions({ includeAll: false }),
+  updateTiendaTrigger('tienda', {
     value: state.selectedTiendaId ? String(state.selectedTiendaId) : '',
     placeholder: 'Seleccionar tienda',
     defaultIcon: 'store',
-    onSelect: (v) => selectTienda(v),
   });
 }
 
 function renderInvTiendaSelect() {
-  renderPickerMenu({
-    key: 'invTienda',
-    options: tiendaOptions({ includeAll: true }),
+  updateTiendaTrigger('invTienda', {
     value: state.inventario.sucursalId || '',
     placeholder: 'Todas las tiendas',
     defaultIcon: 'storefront',
-    onSelect: (v) => {
-      state.inventario.sucursalId = v || '';
-      renderInvTiendaSelect();
-      loadInventario();
-    },
+  });
+}
+
+async function openTiendaModal(mode) {
+  closeAllMenus();
+  state.tiendaModalMode = mode;
+  if (!state.sucursales.length) {
+    try {
+      await loadCatalogos();
+    } catch {
+      /* ignore */
+    }
+  }
+  const modal = document.getElementById('tiendaModal');
+  if (!modal) return;
+  renderTiendaModalGrid();
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+}
+
+function closeTiendaModal() {
+  const modal = document.getElementById('tiendaModal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+  state.tiendaModalMode = null;
+}
+
+function renderTiendaModalGrid() {
+  const grid = document.getElementById('tiendaModalGrid');
+  if (!grid) return;
+
+  const mode = state.tiendaModalMode;
+  const selectedValue =
+    mode === 'inventario'
+      ? String(state.inventario.sucursalId || '')
+      : mode === 'edit'
+        ? String(state.edit.sucursalId || '')
+        : state.selectedTiendaId
+          ? String(state.selectedTiendaId)
+          : '';
+
+  if (!state.sucursales.length) {
+    grid.className = 'px-space-md pb-space-md';
+    grid.innerHTML = `
+      <div class="rounded-xl bg-surface-container-low p-4 text-center text-on-surface-variant font-body-sm text-body-sm">
+        No se pudieron cargar las tiendas. Revisa que el backend esté corriendo y recarga.
+      </div>`;
+    return;
+  }
+
+  grid.className = 'px-space-md pb-space-md overflow-y-auto grid grid-cols-4 gap-2';
+
+  const cells = [];
+  if (mode === 'inventario') {
+    const allSelected = selectedValue === '';
+    cells.push(`
+      <button type="button" class="tiendaGridBtn aspect-square rounded-xl border flex flex-col items-center justify-center gap-0.5 px-1 transition-colors active:scale-95 ${
+        allSelected
+          ? 'bg-primary text-on-primary border-primary'
+          : 'bg-surface-container-low text-on-surface border-outline-variant hover:bg-surface-container'
+      }" data-value="">
+        <span class="material-symbols-outlined text-[20px]">storefront</span>
+        <span class="font-label-sm text-label-sm font-bold leading-tight">Todas</span>
+      </button>`);
+  }
+
+  for (const s of state.sucursales) {
+    const isSelected = String(s.id) === selectedValue;
+    cells.push(`
+      <button type="button" class="tiendaGridBtn aspect-square rounded-xl border flex flex-col items-center justify-center gap-0.5 px-1 transition-colors active:scale-95 ${
+        isSelected
+          ? 'bg-primary text-on-primary border-primary shadow-md'
+          : 'bg-surface-container-low text-on-surface border-outline-variant hover:bg-surface-container'
+      }" data-value="${escapeHtml(s.id)}" aria-label="${escapeHtml(s.codigo)}">
+        <span class="font-code-md text-code-md font-black leading-none">${escapeHtml(s.codigo)}</span>
+      </button>`);
+  }
+
+  grid.innerHTML = cells.join('');
+  grid.querySelectorAll('.tiendaGridBtn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const value = btn.dataset.value ?? '';
+      if (state.tiendaModalMode === 'inventario') {
+        state.inventario.sucursalId = value;
+        renderInvTiendaSelect();
+        loadInventario();
+      } else if (state.tiendaModalMode === 'edit') {
+        state.edit.sucursalId = value === '' ? null : Number(value);
+        updateEditTiendaLabel();
+      } else {
+        selectTienda(value === '' ? null : value);
+      }
+      closeTiendaModal();
+    });
+  });
+}
+
+function bindTiendaModalEvents() {
+  document.getElementById('closeTiendaModalBtn')?.addEventListener('click', closeTiendaModal);
+  document.getElementById('tiendaModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'tiendaModal') closeTiendaModal();
   });
 }
 
@@ -600,13 +1040,8 @@ async function guardarDevolucion() {
       UdM: state.producto?.UdM,
     });
 
-    showToast(
-      result.orden
-        ? `Registrado #${result.orden}`
-        : result.mensaje || 'Devolución registrada.'
-    );
+    showToast(result.mensaje || 'Devolución registrada.');
     state.historialHoy = await api.devoluciones.hoy();
-    await loadSesion();
     renderHistorial();
     nuevoEscaneo();
   } catch (err) {
@@ -687,25 +1122,96 @@ async function startScanner() {
   const region = document.getElementById(regionId);
   if (!region || state.scanning) return;
 
+  const syncBarcodeGuide = (width, height) => {
+    const guide = document.getElementById('barcodeGuide');
+    if (!guide || !width || !height) return;
+    guide.style.width = `${width}px`;
+    guide.style.height = `${height}px`;
+    guide.classList.remove('hidden');
+  };
+
+  const alignGuideToShaded = () => {
+    const shaded = region.querySelector('#qr-shaded-region');
+    if (shaded) {
+      const bt = parseFloat(shaded.style.borderTopWidth) || 0;
+      const bl = parseFloat(shaded.style.borderLeftWidth) || 0;
+      const br = parseFloat(shaded.style.borderRightWidth) || 0;
+      const bb = parseFloat(shaded.style.borderBottomWidth) || 0;
+      const clearW = Math.round(region.clientWidth - bl - br);
+      const clearH = Math.round(region.clientHeight - bt - bb);
+      if (clearW > 0 && clearH > 0) {
+        syncBarcodeGuide(clearW, clearH);
+        return true;
+      }
+    }
+    return false;
+  };
+
   try {
-    state.scanner = new Html5Qrcode(regionId);
+    state.scanner = new Html5Qrcode(regionId, {
+      verbose: false,
+      formatsToSupport: BARCODE_FORMATS,
+      useBarCodeDetectorIfSupported: true,
+    });
+    let lastQr = { width: 0, height: 0 };
     await state.scanner.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 220, height: 120 }, aspectRatio: 1.777 },
+      {
+        fps: 20,
+        aspectRatio: 1.777,
+        disableFlip: true,
+        videoConstraints: {
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        qrbox: (viewfinderWidth, viewfinderHeight) => {
+          const width = Math.max(
+            50,
+            Math.min(Math.floor(viewfinderWidth * 0.92), viewfinderWidth - 6)
+          );
+          const height = Math.max(
+            50,
+            Math.min(Math.floor(viewfinderHeight * 0.7), viewfinderHeight - 8)
+          );
+          lastQr = { width, height };
+          syncBarcodeGuide(width, height);
+          return { width, height };
+        },
+      },
       (decodedText) => {
         const now = Date.now();
-        if (now - state.lastScanAt < 1800) return;
+        if (now - state.lastScanAt < 900) return;
         state.lastScanAt = now;
-        buscarProducto(decodedText);
+        const codigo = String(decodedText || '').trim();
+        if (!codigo) return;
+        beep();
+        const input = document.getElementById('barcodeInput');
+        if (input) input.value = codigo;
+        buscarProducto(codigo);
       },
       () => {}
     );
     state.scanning = true;
+    alignGuideToShaded();
+    requestAnimationFrame(() => {
+      if (!alignGuideToShaded() && lastQr.width) syncBarcodeGuide(lastQr.width, lastQr.height);
+    });
     const hint = document.getElementById('scannerHint');
-    if (hint) hint.textContent = 'Cámara activa · apunta al código';
+    const hintBarEl = document.getElementById('scannerHintBar');
+    if (hint) hint.textContent = '';
+    if (hintBarEl) {
+      hintBarEl.classList.add('hidden');
+      hintBarEl.classList.remove('flex');
+    }
   } catch {
     const hint = document.getElementById('scannerHint');
-    if (hint) hint.textContent = 'Cámara no disponible · usa ingreso manual';
+    const hintBarEl = document.getElementById('scannerHintBar');
+    if (hint) hint.textContent = '';
+    if (hintBarEl) {
+      hintBarEl.classList.add('hidden');
+      hintBarEl.classList.remove('flex');
+    }
   }
 }
 
@@ -747,70 +1253,88 @@ async function loadInventario() {
 
 function renderInventarioList() {
   const list = document.getElementById('inventarioList');
-  const totalReg = document.getElementById('totalRegistros');
-  const totalCant = document.getElementById('totalCantidad');
-  if (totalReg) totalReg.textContent = String(state.inventario.totales.registros || 0);
-  if (totalCant) totalCant.textContent = String(state.inventario.totales.cantidad || 0);
+  renderInventarioTotalesRow();
   if (!list) return;
 
   if (state.inventario.loading) {
-    list.innerHTML = `<div class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">Cargando inventarios...</div>`;
+    list.innerHTML = `<div class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">Cargando...</div>`;
     return;
   }
 
   if (!state.inventario.items.length) {
-    list.innerHTML = `<div class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">No hay escaneos con esos filtros.</div>`;
+    list.innerHTML = `<div class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">Sin resultados</div>`;
     return;
   }
 
-  list.innerHTML = state.inventario.items
-    .map(
-      (item) => `
-    <article class="bg-surface-container-lowest rounded-xl p-3 shadow-sm border border-surface-container-low flex flex-col gap-2" data-devolucion-id="${escapeHtml(item.id)}">
-      <div class="flex items-start justify-between gap-2">
-        <div class="flex items-start gap-2 min-w-0 flex-1">
-          <div class="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center font-code-md text-code-md font-bold shrink-0">
-            ${escapeHtml(item.orden ?? '—')}
+  const rows = state.inventario.items
+    .map((item) => {
+      const codigo = item.Articulo || '—';
+      const sku = item.CodigoBarra || item.codigo_escaneado || '—';
+      const desc = item.ITEMDESC || '—';
+      const tienda = item.sucursal_codigo || item.sucursal_nombre || '—';
+      const estatus = item.estatus_nombre || '—';
+      const n = item.orden ?? '—';
+      return `
+      <tr class="border-b border-surface-container-low hover:bg-surface-container-low/80" data-devolucion-id="${escapeHtml(item.id)}">
+        <td class="inv-sticky-n px-1 py-1.5 align-middle text-center border-r border-surface-container-high">
+          <span class="font-code-md text-code-md font-black text-on-surface tabular-nums">${escapeHtml(n)}</span>
+        </td>
+        <td class="inv-sticky-codigo px-1.5 py-1.5 align-middle border-r border-surface-container-high">
+          <div class="font-code-sm text-code-sm font-bold text-on-surface leading-tight">${escapeHtml(codigo)}</div>
+        </td>
+        <td class="px-1.5 py-1.5 align-middle min-w-[200px] max-w-[300px]">
+          <div class="font-label-md text-label-md text-on-surface font-medium truncate whitespace-nowrap">${escapeHtml(desc)}</div>
+        </td>
+        <td class="px-1.5 py-1.5 align-middle whitespace-nowrap">
+          <span class="font-code-sm text-code-sm font-bold text-on-surface">${escapeHtml(sku)}</span>
+        </td>
+        <td class="px-1.5 py-1.5 align-middle whitespace-nowrap">
+          <span class="inline-flex items-center rounded-md bg-primary-fixed text-on-primary-fixed px-1.5 py-0.5 font-code-sm text-code-sm font-bold">${escapeHtml(tienda)}</span>
+        </td>
+        <td class="px-1.5 py-1.5 align-middle min-w-[110px]">
+          <span class="font-label-sm text-label-sm text-on-surface font-semibold">${escapeHtml(estatus)}</span>
+        </td>
+        <td class="px-2 py-1.5 align-middle whitespace-nowrap text-right">
+          <div class="inline-flex items-center gap-0.5">
+            <button type="button" class="editDevolucionBtn h-8 w-8 rounded-lg text-primary hover:bg-primary-fixed/40 inline-flex items-center justify-center" data-id="${escapeHtml(item.id)}" aria-label="Editar #${escapeHtml(item.orden ?? item.id)}">
+              <span class="material-symbols-outlined text-[18px]">edit</span>
+            </button>
+            <button type="button" class="deleteDevolucionBtn h-8 w-8 rounded-lg text-error hover:bg-error-container/30 inline-flex items-center justify-center" data-id="${escapeHtml(item.id)}" data-orden="${escapeHtml(item.orden ?? item.id)}" aria-label="Eliminar #${escapeHtml(item.orden ?? item.id)}">
+              <span class="material-symbols-outlined text-[18px]">delete</span>
+            </button>
           </div>
-          <div class="min-w-0 flex-1">
-            <h3 class="font-headline-sm text-headline-sm text-on-surface truncate">${escapeHtml(item.ITEMDESC || 'Sin descripción')}</h3>
-            <p class="font-code-sm text-code-sm text-on-surface-variant mt-0.5">
-              Art. ${escapeHtml(item.Articulo || '—')} · ${escapeHtml(item.CodigoBarra || item.codigo_escaneado || '—')}
-            </p>
-          </div>
-        </div>
-        <div class="flex flex-col items-end gap-1 shrink-0">
-          <span class="font-code-sm text-code-sm bg-primary-fixed text-on-primary-fixed px-2 py-0.5 rounded-full font-semibold">
-            ${escapeHtml(item.sucursal_codigo || '—')}
-          </span>
-          <button type="button" class="deleteDevolucionBtn h-9 px-2 rounded-lg text-error hover:bg-error-container/30 flex items-center gap-1 font-label-sm text-label-sm" data-id="${escapeHtml(item.id)}" data-orden="${escapeHtml(item.orden ?? item.id)}" aria-label="Eliminar #${escapeHtml(item.orden ?? item.id)}">
-            <span class="material-symbols-outlined text-[18px]">delete</span>
-            Eliminar
-          </button>
-        </div>
-      </div>
-      <div class="grid grid-cols-2 gap-2 text-on-surface-variant">
-        <div class="rounded-lg bg-surface-container-low px-2.5 py-2">
-          <div class="font-label-sm text-label-sm">Cantidad</div>
-          <div class="font-code-md text-code-md text-on-surface font-semibold">${escapeHtml(`${item.Cantidad ?? 1} ${item.UdM || 'UND'}`)}</div>
-        </div>
-        <div class="rounded-lg bg-surface-container-low px-2.5 py-2">
-          <div class="font-label-sm text-label-sm">Estatus</div>
-          <div class="font-label-md text-label-md text-on-surface font-semibold truncate">${escapeHtml(item.estatus_nombre || '—')}</div>
-        </div>
-        <div class="rounded-lg bg-surface-container-low px-2.5 py-2">
-          <div class="font-label-sm text-label-sm">Tienda</div>
-          <div class="font-label-md text-label-md text-on-surface font-semibold truncate">${escapeHtml(item.sucursal_nombre || item.sucursal_codigo || '—')}</div>
-        </div>
-        <div class="rounded-lg bg-surface-container-low px-2.5 py-2">
-          <div class="font-label-sm text-label-sm">Fecha</div>
-          <div class="font-code-sm text-code-sm text-on-surface font-semibold">${escapeHtml(formatDateTime(item.creado_en))}</div>
-        </div>
-      </div>
-    </article>`
-    )
+        </td>
+      </tr>`;
+    })
     .join('');
 
+  list.innerHTML = `
+    <div id="inventarioTableWrap" class="m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden">
+      <div class="overflow-x-auto overscroll-x-contain touch-pan-x m-0 p-0" id="inventarioTableScroll">
+        <table class="w-full min-w-[700px] border-collapse text-left m-0" id="inventarioDataTable">
+          <thead>
+            <tr class="bg-surface-container">
+              <th class="inv-sticky-n px-1 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high text-center">N°</th>
+              <th class="inv-sticky-codigo px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high whitespace-nowrap">Código</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Descripción</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">SKU</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Tienda</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Estatus</th>
+              <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold w-16"></th>
+            </tr>
+          </thead>
+          <tbody class="bg-surface-container-lowest">
+            ${rows}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  list.querySelectorAll('.editDevolucionBtn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      openEditDevolucion(btn.dataset.id);
+    });
+  });
   list.querySelectorAll('.deleteDevolucionBtn').forEach((btn) => {
     btn.addEventListener('click', () => {
       eliminarDevolucion(btn.dataset.id, btn.dataset.orden);
@@ -820,42 +1344,51 @@ function renderInventarioList() {
 
 function renderInventarioView() {
   app.innerHTML = `
-  <main class="flex-1 flex flex-col relative w-full pb-24 bg-surface pt-4 pt-safe">
+  <main class="flex-1 flex flex-col relative w-full pb-36 bg-surface pt-4 pt-safe">
     <div class="px-gutter pb-space-sm flex flex-col gap-space-sm">
-      <div>
-        <h1 class="font-headline-md text-headline-md text-on-surface">Inventario</h1>
-        <p class="font-body-sm text-body-sm text-on-surface-variant">Escaneos registrados con todos sus campos</p>
-      </div>
-
-      <div class="grid grid-cols-2 gap-2">
-        <div class="rounded-xl bg-primary-fixed text-on-primary-fixed p-3">
-          <div class="font-label-sm text-label-sm opacity-80">Total registros</div>
-          <div id="totalRegistros" class="font-display-lg text-display-lg">${state.inventario.totales.registros || 0}</div>
-        </div>
-        <div class="rounded-xl bg-secondary-container text-on-secondary-container p-3">
-          <div class="font-label-sm text-label-sm opacity-80">Total cantidad</div>
-          <div id="totalCantidad" class="font-display-lg text-display-lg">${state.inventario.totales.cantidad || 0}</div>
-        </div>
-      </div>
-
       <div class="bg-surface-container rounded-xl p-2.5 flex flex-col gap-2 shadow-sm">
         <div class="flex items-center gap-1.5 bg-surface-container-lowest rounded-lg p-1">
           <span class="material-symbols-outlined text-[20px] text-on-surface-variant ml-1">search</span>
-          <input id="inventarioSearch" class="flex-1 bg-transparent font-body-md text-body-md text-on-surface px-1 h-9 focus:outline-none min-w-0" placeholder="Buscar artículo, barra, descripción..." type="search" value="${escapeHtml(state.inventario.q)}" />
+          <input id="inventarioSearch" class="flex-1 bg-transparent font-body-md text-body-md text-on-surface px-1 h-9 focus:outline-none min-w-0" placeholder="Buscar..." type="search" value="${escapeHtml(state.inventario.q)}" />
         </div>
-        ${pickerHtml({ key: 'invTienda', icon: 'storefront', placeholder: 'Todas las tiendas' })}
+        ${pickerHtml({ key: 'invTienda', icon: 'storefront', placeholder: 'Todas las tiendas', modal: true })}
       </div>
-
-      <div id="inventarioList" class="flex flex-col gap-2"></div>
     </div>
+
+    <div id="inventarioList" class="w-full m-0 p-0 flex flex-col"></div>
+
+    <div id="inventarioTotalesBar" class="fixed bottom-16 inset-x-0 z-40 border-t border-outline-variant bg-surface-container-lowest shadow-[0_-2px_10px_rgba(0,0,0,0.06)]">
+      <div class="h-11 flex items-stretch text-on-surface">
+        <div class="inv-excel-total-label shrink-0 flex items-center justify-center px-2 border-r border-surface-container-high font-label-sm text-label-sm font-black bg-surface-container-lowest">Total</div>
+        <div class="flex-1 border-r border-surface-container-low bg-surface-container-lowest"></div>
+        <div class="inv-excel-total-value shrink-0 min-w-[4.5rem] flex items-center justify-center px-3 border-l border-surface-container-high font-code-md text-code-md font-black tabular-nums bg-surface-container-lowest">
+          <span id="totalCantidad">${state.inventario.totales.registros || 0}</span>
+        </div>
+      </div>
+    </div>
+
     ${toastHtml()}
+    ${tiendaModalHtml()}
+    ${editDevolucionModalHtml()}
   </main>
   ${navHtml()}
   `;
 
   renderInvTiendaSelect();
   bindInventarioEvents();
+  bindTiendaModalEvents();
+  bindEditDevolucionEvents();
   loadInventario();
+  if (!state.sucursales.length || !state.estatus.length) {
+    loadCatalogos().catch(() => {});
+  }
+}
+
+function renderInventarioTotalesRow() {
+  // "Total" = conteo de escaneos (antes etiqueta "Registros")
+  const value = String(state.inventario.totales.registros || 0);
+  const totalCant = document.getElementById('totalCantidad');
+  if (totalCant) totalCant.textContent = value;
 }
 
 function bindInventarioEvents() {
@@ -872,7 +1405,7 @@ function bindInventarioEvents() {
 
   document.getElementById('invTiendaTrigger')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    toggleMenu('invTienda');
+    openTiendaModal('inventario');
   });
   document.addEventListener('click', onDocumentClickCloseMenus);
 }
@@ -883,72 +1416,54 @@ function renderTriageView() {
   app.innerHTML = `
   <main class="flex-1 flex flex-col relative w-full pb-24 bg-surface pt-4 pt-safe">
     <div class="flex flex-col w-full">
-      <div class="px-gutter pb-space-sm">
-        <div class="bg-primary text-on-primary rounded-xl px-3 py-2.5 shadow-md flex items-center justify-between gap-2 mb-2">
-          <div class="min-w-0">
-            <p class="font-label-sm text-label-sm opacity-90">Orden compartido</p>
-            <p id="sesionMetaTop" class="font-body-sm text-body-sm opacity-80 truncate">Próximo registro #1</p>
-          </div>
-          <span id="sesionOrdenBadgeTop" class="bg-on-primary text-primary font-code-md text-code-md min-w-12 h-12 px-2 rounded-xl flex items-center justify-center font-black text-2xl leading-none shrink-0">#1</span>
+      <div class="px-gutter pb-space-sm flex flex-col gap-1.5">
+        <div class="flex items-center justify-end gap-1.5">
+          <button class="w-8 h-8 rounded-full bg-surface-container text-on-surface flex items-center justify-center" id="flashToggle" type="button" aria-label="Flash">
+            <span class="material-symbols-outlined text-[18px]">flash_on</span>
+          </button>
+          <button class="w-8 h-8 rounded-full bg-surface-container text-on-surface flex items-center justify-center" id="beepToggle" type="button" aria-label="Sonido">
+            <span class="material-symbols-outlined text-[18px]">volume_up</span>
+          </button>
         </div>
-        <div class="relative w-full h-40 rounded-xl bg-inverse-surface overflow-hidden shadow-md flex flex-col justify-between p-3">
-          <div id="scannerRegion"></div>
-          <div class="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:14px_14px] z-[2]"></div>
-          <div class="absolute inset-x-8 top-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none z-[3]">
-            <div class="w-full h-0.5 bg-primary-container shadow-[0_0_12px_#0d5bff] animate-pulse"></div>
+        <div class="relative w-full h-[160px] rounded-xl bg-inverse-surface overflow-hidden shadow-md barcode-scanner-slot">
+          <div id="scannerRegion" class="absolute inset-0 z-[1]"></div>
+          <div id="barcodeGuide" class="hidden barcode-guide pointer-events-none z-[3]" aria-hidden="true">
+            <span class="barcode-guide-corner tl"></span>
+            <span class="barcode-guide-corner tr"></span>
+            <span class="barcode-guide-corner bl"></span>
+            <span class="barcode-guide-corner br"></span>
+            <span class="barcode-guide-laser"></span>
           </div>
-          <div class="relative z-10 flex items-center justify-between">
-            <span class="bg-inverse-surface/80 text-inverse-on-surface font-code-sm text-code-sm px-2 py-0.5 rounded-DEFAULT backdrop-blur-md">Enfoque automático</span>
-            <div class="flex items-center gap-1.5">
-              <button class="w-8 h-8 rounded-full bg-surface-container-highest/30 text-inverse-on-surface flex items-center justify-center" id="flashToggle" type="button">
-                <span class="material-symbols-outlined text-[18px]">flash_on</span>
-              </button>
-              <button class="w-8 h-8 rounded-full bg-surface-container-highest/30 text-inverse-on-surface flex items-center justify-center" id="beepToggle" type="button">
-                <span class="material-symbols-outlined text-[18px]">volume_up</span>
-              </button>
-            </div>
-          </div>
-          <div class="relative z-10 flex items-center justify-center bg-inverse-surface/90 backdrop-blur-sm py-1.5 px-3 rounded-lg gap-2">
-            <span class="material-symbols-outlined text-primary-fixed text-[16px]">qr_code_scanner</span>
-            <span id="scannerHint" class="font-body-sm text-body-sm text-inverse-on-surface font-medium">Apunta al código de barras o QR</span>
+          <div id="scannerHintBar" class="hidden absolute inset-x-2 bottom-1 z-10 items-center justify-center bg-inverse-surface/90 backdrop-blur-sm py-0.5 px-2 rounded-md gap-1">
+            <span class="material-symbols-outlined text-primary-fixed text-[14px]">qr_code_scanner</span>
+            <span id="scannerHint" class="font-body-sm text-body-sm text-inverse-on-surface font-medium"></span>
           </div>
         </div>
       </div>
 
       <div class="px-gutter pb-space-sm">
         <div class="bg-surface-container p-2.5 rounded-xl flex flex-col gap-1.5 shadow-sm">
-          <div class="flex items-center justify-between px-0.5">
-            <label class="font-label-sm text-label-sm text-on-surface-variant font-semibold tracking-wide" for="barcodeInput">Ingreso manual de código</label>
-            <span class="font-code-sm text-code-sm text-secondary">Código de barras</span>
-          </div>
           <div class="flex items-center gap-1.5 bg-surface-container-lowest rounded-lg p-1">
-            <button class="w-9 h-9 rounded-DEFAULT bg-surface-container text-on-surface flex items-center justify-center shrink-0" type="button" id="focusInputBtn">
+            <button class="w-9 h-9 rounded-DEFAULT bg-surface-container text-on-surface flex items-center justify-center shrink-0" type="button" id="focusInputBtn" aria-label="Teclado">
               <span class="material-symbols-outlined text-[20px]">dialpad</span>
             </button>
-            <input class="flex-1 bg-transparent font-code-md text-code-md text-on-surface px-1 focus:outline-none min-w-0 font-semibold" id="barcodeInput" placeholder="Ingresar código..." type="text" value="" autocomplete="off" />
-            <button class="w-7 h-7 rounded-full text-secondary hover:text-on-surface flex items-center justify-center shrink-0" id="clearInputBtn" type="button">
+            <input class="flex-1 bg-transparent font-code-md text-code-md text-on-surface px-1 focus:outline-none min-w-0 font-semibold" id="barcodeInput" placeholder="Código..." type="text" value="" autocomplete="off" aria-label="Código" />
+            <button class="w-7 h-7 rounded-full text-secondary hover:text-on-surface flex items-center justify-center shrink-0" id="clearInputBtn" type="button" aria-label="Limpiar">
               <span class="material-symbols-outlined text-[18px]">cancel</span>
             </button>
             <button id="buscarBtn" class="bg-primary hover:bg-primary-container text-on-primary font-label-md text-label-md px-3 h-9 rounded-lg flex items-center gap-1 shrink-0" type="button">
               <span>Buscar</span>
-              <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
             </button>
           </div>
         </div>
       </div>
 
       <div class="px-gutter pb-space-sm">
-        <div id="productoEmpty" class="bg-surface-container-lowest rounded-xl p-space-sm shadow-sm text-center text-on-surface-variant font-body-sm text-body-sm">
-          Escanea o busca un código para identificar el producto.
-        </div>
+        <div id="productoEmpty" class="hidden"></div>
 
         <div id="productoCard" class="hidden bg-surface-container-lowest rounded-xl p-space-sm shadow-sm flex-col gap-3">
           <div class="flex items-center justify-between pb-1 border-b-2 border-surface-container-low">
-            <div class="flex items-center gap-1.5 bg-surface-container-high px-2 py-0.5 rounded-DEFAULT">
-              <span class="w-2 h-2 rounded-full bg-primary-container"></span>
-              <span class="font-label-sm text-label-sm text-primary font-bold">Producto identificado</span>
-            </div>
-            <span class="font-code-sm text-code-sm text-secondary font-medium">CEDIS</span>
+            <span class="font-label-sm text-label-sm text-primary font-bold">Producto</span>
           </div>
 
           <div class="flex items-center gap-space-sm">
@@ -979,7 +1494,7 @@ function renderTriageView() {
                 </span>
                 <span id="bahiaHint" class="font-code-sm text-code-sm text-secondary font-normal">—</span>
               </label>
-              ${pickerHtml({ key: 'tienda', icon: 'store', placeholder: 'Seleccionar tienda' })}
+              ${pickerHtml({ key: 'tienda', icon: 'store', placeholder: 'Seleccionar tienda', modal: true })}
             </div>
 
             <div class="flex flex-col gap-1">
@@ -999,40 +1514,37 @@ function renderTriageView() {
 
           <button class="w-full h-12 rounded-xl bg-primary hover:bg-primary-container text-on-primary font-headline-sm text-headline-sm flex items-center justify-center gap-2 shadow-md mt-1" id="saveActionBtn" type="button">
             <span class="material-symbols-outlined text-[22px]">check_circle</span>
-            <span id="saveOrdenLabel">Registrar #1</span>
+            <span>Registrar</span>
           </button>
           <button class="w-full h-9 rounded-lg bg-surface-container text-on-surface hover:bg-surface-container-high font-label-md text-label-md flex items-center justify-center gap-1.5" id="discardActionBtn" type="button">
             <span class="material-symbols-outlined text-[16px]">restart_alt</span>
-            <span>Nuevo Escaneo</span>
+            <span>Limpiar</span>
           </button>
         </div>
       </div>
 
-      <div class="px-gutter pb-space-sm flex flex-col gap-2">
-        <div class="bg-surface-container-lowest rounded-xl p-space-sm shadow-sm flex flex-col gap-2">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-1.5">
-              <span class="material-symbols-outlined text-primary text-[18px]">history</span>
-              <span class="font-headline-sm text-headline-sm text-on-surface">Devoluciones agregadas hoy</span>
-            </div>
-            <span id="historialCount" class="bg-primary-fixed text-on-primary-fixed font-code-sm text-code-sm px-2 py-0.5 rounded-full font-semibold">0 ítems</span>
-          </div>
-          <div id="historialList" class="flex flex-col gap-1.5 pt-1"></div>
+      <div class="w-full m-0 p-0 flex flex-col gap-2">
+        <div class="px-gutter flex items-center justify-between">
+          <span class="font-headline-sm text-headline-sm text-on-surface">Hoy</span>
+          <span id="historialCount" class="bg-primary-fixed text-on-primary-fixed font-code-sm text-code-sm px-2 py-0.5 rounded-full font-semibold">0</span>
         </div>
+        <div id="historialList" class="w-full m-0 p-0"></div>
       </div>
 
       ${toastHtml()}
       ${estatusModalHtml()}
+      ${tiendaModalHtml()}
+      ${editDevolucionModalHtml()}
     </div>
   </main>
   ${navHtml()}
   `;
 
   bindTriageEvents();
+  bindEditDevolucionEvents();
   fillSelects();
   renderHistorial();
   renderProductoCard();
-  loadSesion();
   startScanner();
 }
 
@@ -1077,7 +1589,7 @@ function bindTriageEvents() {
 
   document.getElementById('tiendaTrigger')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    toggleMenu('tienda');
+    openTiendaModal('triage');
   });
   document.getElementById('statusTrigger')?.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1099,7 +1611,11 @@ function bindTriageEvents() {
     }
     if (e.key === 'Escape') closeEstatusModal();
   });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && state.tiendaModalMode) closeTiendaModal();
+  });
 
+  bindTiendaModalEvents();
   document.getElementById('saveActionBtn')?.addEventListener('click', guardarDevolucion);
   document.getElementById('discardActionBtn')?.addEventListener('click', nuevoEscaneo);
 }

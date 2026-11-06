@@ -21,6 +21,7 @@ const listSql = `
     d.notas,
     d.creado_en,
     d.sucursal_id,
+    d.estatus_id,
     s.codigo AS sucursal_codigo,
     s.nombre AS sucursal_nombre,
     s.bahia,
@@ -73,10 +74,13 @@ function buildFilters(query = {}) {
 router.get('/', (req, res) => {
   const db = getDb();
   const { whereSql, params } = buildFilters(req.query);
+  // Hoy: último → primero; resto: primero → último
+  const ordenDir =
+    req.query.hoy === '1' || req.query.hoy === 'true' ? 'DESC' : 'ASC';
   const rows = db
     .prepare(
       `${listSql} ${whereSql}
-       ORDER BY COALESCE(d.sesion_id, 0) DESC, COALESCE(d.orden, d.id) ASC
+       ORDER BY COALESCE(d.sesion_id, 0) DESC, COALESCE(d.orden, d.id) ${ordenDir}
        LIMIT 500`
     )
     .all(params);
@@ -233,6 +237,110 @@ router.post('/', (req, res) => {
     siguiente_orden: getSiguienteOrden(),
     bahia: sucursal.bahia,
     mensaje: `#${orden} guardado en ${sucursal.nombre}.`,
+  });
+});
+
+router.patch('/:id', (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) {
+    return res.status(400).json({ error: 'id inválido' });
+  }
+
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM devoluciones WHERE id = ?').get(id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Registro no encontrado' });
+  }
+
+  const body = req.body ?? {};
+  let sucursalId = existing.sucursal_id;
+  let estatusId = existing.estatus_id;
+  let cantidad = existing.cantidad;
+  let notas = existing.notas;
+  let itemdesc = existing.itemdesc;
+  let codigoEscaneado = existing.codigo_escaneado;
+  let codigoBarra = existing.codigo_barra;
+  let articulo = existing.articulo;
+  let udm = existing.udm;
+
+  if (body.codigo !== undefined || body.CodigoBarra !== undefined || body.codigo_barra !== undefined) {
+    const codigo = String(
+      body.codigo ?? body.CodigoBarra ?? body.codigo_barra ?? ''
+    ).trim();
+    if (!codigo) {
+      return res.status(400).json({ error: 'Código inválido' });
+    }
+    codigoEscaneado = codigo;
+    codigoBarra = codigo;
+  }
+
+  if (body.Articulo !== undefined || body.articulo !== undefined) {
+    articulo = String(body.Articulo ?? body.articulo ?? '').trim() || null;
+  }
+  if (body.UdM !== undefined || body.udm !== undefined) {
+    udm = String(body.UdM ?? body.udm ?? '').trim() || 'UND';
+  }
+
+  if (body.sucursal_id !== undefined) {
+    const sucursal = db
+      .prepare('SELECT * FROM sucursales WHERE id = ? AND activo = 1')
+      .get(Number(body.sucursal_id));
+    if (!sucursal) {
+      return res.status(400).json({ error: 'Sucursal inválida' });
+    }
+    sucursalId = sucursal.id;
+  }
+
+  if (body.estatus_id !== undefined) {
+    const estatus = db
+      .prepare('SELECT * FROM estatus_devolucion WHERE id = ? AND activo = 1')
+      .get(Number(body.estatus_id));
+    if (!estatus) {
+      return res.status(400).json({ error: 'Estatus inválido' });
+    }
+    estatusId = estatus.id;
+  }
+
+  if (body.Cantidad !== undefined || body.cantidad !== undefined) {
+    const n = Number(body.Cantidad ?? body.cantidad);
+    if (!Number.isFinite(n) || n <= 0) {
+      return res.status(400).json({ error: 'Cantidad inválida' });
+    }
+    cantidad = n;
+  }
+
+  if (body.notas !== undefined) {
+    const text = String(body.notas ?? '').trim();
+    notas = text || null;
+  }
+
+  if (body.ITEMDESC !== undefined || body.itemdesc !== undefined) {
+    const text = String(body.ITEMDESC ?? body.itemdesc ?? '').trim();
+    itemdesc = text || null;
+  }
+
+  db.prepare(
+    `UPDATE devoluciones
+     SET codigo_escaneado = ?, codigo_barra = ?, articulo = ?, itemdesc = ?, cantidad = ?, udm = ?, sucursal_id = ?, estatus_id = ?, notas = ?
+     WHERE id = ?`
+  ).run(
+    codigoEscaneado,
+    codigoBarra,
+    articulo,
+    itemdesc,
+    cantidad,
+    udm,
+    sucursalId,
+    estatusId,
+    notas,
+    id
+  );
+
+  const devolucion = db.prepare(`${listSql} WHERE d.id = ?`).get(id);
+  res.json({
+    ok: true,
+    devolucion,
+    mensaje: `Actualizado #${devolucion.orden ?? id}.`,
   });
 });
 
