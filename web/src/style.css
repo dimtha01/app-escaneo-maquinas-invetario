@@ -1,0 +1,4 @@
+/* Estilos mínimos; la UI principal usa Tailwind CDN del diseño. */
+body {
+  -webkit-font-smoothing: antialiased;
+}

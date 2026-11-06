@@ -1,0 +1,14 @@
+{
+  "name": "app-escaneo-maquinas-inventario",
+  "version": "1.0.0",
+  "private": true,
+  "description": "App de escaneo de máquinas / inventario — web (Vite) + backend (Express)",
+  "scripts": {
+    "dev": "npm run dev --prefix backend & npm run dev --prefix web",
+    "dev:web": "npm run dev --prefix web",
+    "dev:backend": "npm run dev --prefix backend",
+    "install:all": "npm install --prefix web && npm install --prefix backend",
+    "build": "npm run build --prefix web",
+    "start": "npm run start --prefix backend"
+  }
+}
