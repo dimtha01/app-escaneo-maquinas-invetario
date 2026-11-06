@@ -1555,9 +1555,9 @@ function renderTriageView() {
   startScanner();
 }
 
-/** Pistola Bluetooth (HID): escribe muy rápido y suele terminar con Enter */
-const WEDGE_MAX_GAP_MS = 80;
-const WEDGE_IDLE_MS = 140;
+/** Pistola Bluetooth (HID): buffer silencioso → pega el código completo de golpe */
+const WEDGE_MAX_GAP_MS = 45;
+const WEDGE_IDLE_MS = 70;
 const WEDGE_MIN_LEN = 6;
 
 function clearWedgeTimer() {
@@ -1567,81 +1567,98 @@ function clearWedgeTimer() {
   }
 }
 
+function wedgeTargetInput() {
+  const editModal = document.getElementById('editDevolucionModal');
+  const editOpen =
+    editModal &&
+    !editModal.classList.contains('hidden') &&
+    editModal.classList.contains('flex');
+  if (editOpen) return document.getElementById('editCodigo');
+  return document.getElementById('barcodeInput');
+}
+
+function appendCharsToInput(chars) {
+  const input = wedgeTargetInput();
+  if (!input || !chars) return;
+  input.value = `${input.value || ''}${chars}`;
+}
+
 function flushWedgeBuffer(source = 'idle') {
   clearWedgeTimer();
   const codigo = String(state.wedge.buffer || '').trim();
   state.wedge.buffer = '';
-  if (codigo.length < WEDGE_MIN_LEN) return;
-  const input = document.getElementById('barcodeInput');
-  if (input) input.value = codigo;
-  buscarProducto(codigo);
+  if (codigo.length < WEDGE_MIN_LEN) {
+    if (codigo) appendCharsToInput(codigo);
+    return;
+  }
+  const input = wedgeTargetInput();
+  if (input) {
+    input.value = codigo; // de golpe, no char a char
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  if (input?.id === 'editCodigo') {
+    buscarCodigoEnEdit();
+  } else {
+    buscarProducto(codigo);
+  }
 }
 
 function onBluetoothWedgeKeydown(e) {
-  if (state.view !== 'triage') return;
+  if (state.view !== 'triage' && state.view !== 'inventario') return;
   if (e.ctrlKey || e.altKey || e.metaKey) return;
 
   const target = e.target;
   const tag = target?.tagName;
-  const isBarcode = target?.id === 'barcodeInput';
+  const isCodeField =
+    target?.id === 'barcodeInput' || target?.id === 'editCodigo';
   const isOtherField =
-    /^(INPUT|TEXTAREA|SELECT)$/.test(tag || '') && !isBarcode;
-  // No interceptar tipeo lento en otros campos (tienda, estatus, etc.)
+    /^(INPUT|TEXTAREA|SELECT)$/.test(tag || '') && !isCodeField;
   if (isOtherField) return;
 
   const now = Date.now();
 
   if (e.key === 'Enter') {
-    if (isBarcode) {
-      e.preventDefault();
-      clearWedgeTimer();
-      state.wedge.buffer = '';
-      buscarProducto(target.value);
-      return;
-    }
     if (state.wedge.buffer.length >= WEDGE_MIN_LEN) {
       e.preventDefault();
       flushWedgeBuffer('enter');
+      return;
+    }
+    if (isCodeField) {
+      e.preventDefault();
+      clearWedgeTimer();
+      const leftover = state.wedge.buffer;
+      state.wedge.buffer = '';
+      if (leftover) appendCharsToInput(leftover);
+      const value = String(target.value || '').trim();
+      if (target.id === 'editCodigo') buscarCodigoEnEdit();
+      else if (value) buscarProducto(value);
     }
     return;
   }
 
   if (e.key.length !== 1) return;
 
-  // En el input: detección por ráfaga (pistola sin Enter) + Enter normal
-  if (isBarcode) {
-    const gap = now - state.wedge.lastAt;
-    if (gap > WEDGE_MAX_GAP_MS * 2) state.wedge.buffer = '';
-    state.wedge.buffer += e.key;
-    state.wedge.lastAt = now;
-    clearWedgeTimer();
-    state.wedge.timer = setTimeout(() => {
-      const value = document.getElementById('barcodeInput')?.value?.trim() || '';
-      // Solo auto-buscar si parece ráfaga de pistola (buffer ≈ valor y largo)
-      if (
-        value.length >= WEDGE_MIN_LEN &&
-        state.wedge.buffer.length >= WEDGE_MIN_LEN &&
-        value.endsWith(state.wedge.buffer.slice(-Math.min(8, state.wedge.buffer.length)))
-      ) {
-        state.wedge.buffer = '';
-        buscarProducto(value);
-      } else {
-        state.wedge.buffer = '';
-      }
-    }, WEDGE_IDLE_MS);
-    return;
-  }
-
-  // Sin foco en input: capturar teclas de la pistola a nivel documento
   const gap = now - state.wedge.lastAt;
-  if (gap > WEDGE_MAX_GAP_MS && state.wedge.buffer.length) {
+  // Corte de ráfaga: lo corto anterior era tipeo manual
+  if (state.wedge.buffer.length && gap > WEDGE_MAX_GAP_MS) {
+    if (state.wedge.buffer.length < WEDGE_MIN_LEN) {
+      appendCharsToInput(state.wedge.buffer);
+    }
     state.wedge.buffer = '';
   }
+
+  // Silenciar teclas de la pistola → no se ve lento char a char
   e.preventDefault();
   state.wedge.buffer += e.key;
   state.wedge.lastAt = now;
   clearWedgeTimer();
-  state.wedge.timer = setTimeout(() => flushWedgeBuffer('idle'), WEDGE_IDLE_MS);
+  state.wedge.timer = setTimeout(() => {
+    if (state.wedge.buffer.length >= WEDGE_MIN_LEN) flushWedgeBuffer('idle');
+    else {
+      appendCharsToInput(state.wedge.buffer);
+      state.wedge.buffer = '';
+    }
+  }, WEDGE_IDLE_MS);
 }
 
 function bindBluetoothScanner() {
