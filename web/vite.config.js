@@ -1,16 +1,23 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 
-export default defineConfig({
-  server: {
-    port: 5173,
-    // Permitir túneles Cloudflare / hosts externos en dev
-    allowedHosts: true,
-    proxy: {
-      '/api': {
-        // Backend local (PORT en backend/.env). Override: VITE_API_PROXY=http://localhost:4000
-        target: process.env.VITE_API_PROXY || 'http://localhost:3000',
-        changeOrigin: true,
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  const port = Number(env.PORT || 5173);
+  const apiProxy =
+    env.VITE_API_PROXY || `http://localhost:${env.API_PORT || 3000}`;
+
+  return {
+    server: {
+      port,
+      // Permitir túneles Cloudflare / hosts externos en dev
+      allowedHosts: true,
+      proxy: {
+        '/api': {
+          // Backend local (PORT en backend/.env). Override: VITE_API_PROXY o API_PORT
+          target: apiProxy,
+          changeOrigin: true,
+        },
       },
     },
-  },
+  };
 });

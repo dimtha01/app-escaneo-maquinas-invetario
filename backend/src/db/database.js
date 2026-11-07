@@ -144,9 +144,10 @@ function ensureTiendasT01T49() {
      WHERE codigo = ?`
   );
 
-  for (let i = 1; i <= 49; i += 1) {
+  // T00 = Sin tienda (obligatoria) + T01–T49
+  for (let i = 0; i <= 49; i += 1) {
     const codigo = `T${String(i).padStart(2, '0')}`;
-    const nombre = `Tienda ${codigo}`;
+    const nombre = i === 0 ? 'Sin tienda' : `Tienda ${codigo}`;
     insert.run(codigo, nombre, codigo);
     activate.run(nombre, codigo, codigo);
   }

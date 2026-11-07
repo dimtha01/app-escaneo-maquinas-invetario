@@ -790,14 +790,12 @@ function selectEstatus(id) {
 }
 
 function renderEstatusSelect() {
-  if (!state.selectedEstatusId && state.estatus[0]) {
-    state.selectedEstatusId = Number(state.estatus[0].id);
-  }
+  // Sin estatus por defecto: el usuario debe elegirlo al registrar.
   if (
     state.selectedEstatusId &&
     !state.estatus.some((e) => Number(e.id) === Number(state.selectedEstatusId))
   ) {
-    state.selectedEstatusId = state.estatus[0] ? Number(state.estatus[0].id) : null;
+    state.selectedEstatusId = null;
   }
 
   renderPickerMenu({
@@ -833,7 +831,7 @@ function updateTiendaTrigger(key, { value, placeholder, defaultIcon }) {
     triggerLabel.textContent = 'Todas las tiendas';
   } else {
     triggerLabel.textContent = selected
-      ? `${selected.codigo} — ${selected.nombre}`
+      ? `${selected.codigo} - ${selected.nombre}`
       : placeholder;
   }
 }
@@ -929,13 +927,22 @@ function renderTiendaModalGrid() {
 
   for (const s of state.sucursales) {
     const isSelected = String(s.id) === selectedValue;
+    const isSinTienda = s.codigo === 'T00';
+    const aria = isSinTienda
+      ? 'T00 - Sin tienda'
+      : `${s.codigo}${s.nombre ? ` - ${s.nombre}` : ''}`;
     cells.push(`
       <button type="button" class="tiendaGridBtn aspect-square rounded-xl border flex flex-col items-center justify-center gap-0.5 px-1 transition-colors active:scale-95 ${
         isSelected
           ? 'bg-primary text-on-primary border-primary shadow-md'
           : 'bg-surface-container-low text-on-surface border-outline-variant hover:bg-surface-container'
-      }" data-value="${escapeHtml(s.id)}" aria-label="${escapeHtml(s.codigo)}">
+      }" data-value="${escapeHtml(s.id)}" aria-label="${escapeHtml(aria)}">
         <span class="font-code-md text-code-md font-black leading-none">${escapeHtml(s.codigo)}</span>
+        ${
+          isSinTienda
+            ? '<span class="font-label-sm text-[9px] leading-tight opacity-80 text-center">Sin tienda</span>'
+            : ''
+        }
       </button>`);
   }
 
@@ -1083,9 +1090,14 @@ async function guardarDevolucion() {
 function nuevoEscaneo() {
   state.producto = null;
   state.ultimoCodigo = '';
+  state.selectedTiendaId = null;
+  state.selectedEstatusId = null;
   const input = document.getElementById('barcodeInput');
   if (input) input.value = '';
   renderProductoCard();
+  renderTiendaSelect();
+  renderEstatusSelect();
+  updateBahiaHint();
 }
 
 function openEstatusModal() {
