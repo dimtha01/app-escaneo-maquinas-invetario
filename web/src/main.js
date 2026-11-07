@@ -1428,7 +1428,7 @@ function renderInventarioConsolidado(list) {
     .join('');
 
   list.innerHTML = `
-    <div class="px-gutter pb-2.5">
+    <div class="shrink-0 px-gutter pb-2.5">
       <div class="flex items-center gap-2">
         <span class="material-symbols-outlined text-[18px] text-primary">inventory_2</span>
         <div class="min-w-0">
@@ -1437,8 +1437,8 @@ function renderInventarioConsolidado(list) {
         </div>
       </div>
     </div>
-    <div id="inventarioTableWrap" class="m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden">
-      <div class="overflow-x-auto overscroll-x-contain touch-pan-x m-0 p-0" id="inventarioTableScroll">
+    <div id="inventarioTableWrap" class="flex-1 min-h-0 m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden flex flex-col">
+      <div class="inv-table-scroll m-0 p-0" id="inventarioTableScroll">
         <table class="w-full min-w-[640px] border-collapse text-left m-0" id="inventarioDataTable">
           <thead>
             <tr class="bg-surface-container">
@@ -1509,7 +1509,7 @@ function renderInventarioDetalleCodigo(list) {
   const registrosLabel = `${items.length} registro${items.length === 1 ? '' : 's'}`;
 
   list.innerHTML = `
-    <div class="px-gutter pb-3 flex flex-col gap-2">
+    <div class="shrink-0 px-gutter pb-3 flex flex-col gap-2">
       <nav class="flex items-center gap-1.5 min-w-0" aria-label="Navegación inventario">
         <button type="button" id="invVolverConsolidado" class="shrink-0 h-8 px-2 rounded-lg text-primary hover:bg-primary-fixed/40 inline-flex items-center gap-1 font-label-sm text-label-sm font-bold">
           <span class="material-symbols-outlined text-[18px]">arrow_back</span>
@@ -1531,8 +1531,8 @@ function renderInventarioDetalleCodigo(list) {
         </div>
       </div>
     </div>
-    <div id="inventarioTableWrap" class="m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden">
-      <div class="overflow-x-auto overscroll-x-contain touch-pan-x m-0 p-0" id="inventarioTableScroll">
+    <div id="inventarioTableWrap" class="flex-1 min-h-0 m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden flex flex-col">
+      <div class="inv-table-scroll m-0 p-0" id="inventarioTableScroll">
         <table class="w-full min-w-[560px] border-collapse text-left m-0" id="inventarioDataTable">
           <thead>
             <tr class="bg-surface-container">
@@ -1601,9 +1601,10 @@ async function descargarReporteInventario() {
 }
 
 function renderInventarioView() {
+  document.body.classList.add('inv-lock-scroll');
   app.innerHTML = `
-  <main class="flex-1 flex flex-col relative w-full pb-36 bg-surface pt-4 pt-safe">
-    <div class="px-gutter pb-space-sm flex flex-col gap-space-sm">
+  <main class="flex-1 flex flex-col relative w-full min-h-0 overflow-hidden bg-surface pt-4 pt-safe">
+    <div class="shrink-0 px-gutter pb-space-sm flex flex-col gap-space-sm">
       <div class="bg-surface-container rounded-xl p-2.5 flex flex-col gap-2 shadow-sm">
         <div class="flex items-center gap-1.5 bg-surface-container-lowest rounded-lg p-1">
           <span class="material-symbols-outlined text-[20px] text-on-surface-variant ml-1">search</span>
@@ -1620,7 +1621,7 @@ function renderInventarioView() {
       </div>
     </div>
 
-    <div id="inventarioList" class="w-full m-0 p-0 flex flex-col"></div>
+    <div id="inventarioList" class="flex-1 min-h-0 w-full m-0 flex flex-col overflow-hidden pb-[7.5rem]"></div>
 
     <div id="inventarioTotalesBar" class="fixed bottom-16 inset-x-0 z-40 border-t border-outline-variant bg-surface-container-lowest shadow-[0_-2px_10px_rgba(0,0,0,0.06)]">
       <div class="h-11 flex items-stretch text-on-surface">
@@ -1696,6 +1697,7 @@ function bindInventarioEvents() {
 /* ---------------- Triage view ---------------- */
 
 function renderTriageView() {
+  document.body.classList.remove('inv-lock-scroll');
   app.innerHTML = `
   <main class="flex-1 flex flex-col relative w-full pb-24 bg-surface pt-4 pt-safe">
     <div class="flex flex-col w-full">

@@ -76,11 +76,61 @@ thead .inv-sticky-cant {
 #historialList,
 #historialTableScroll {
   margin: 0 !important;
+}
+
+#inventarioList {
   padding: 0 !important;
 }
 
-#inventarioTableScroll {
+/* Inventario a pantalla completa con scroll interno (móvil táctil) */
+body.inv-lock-scroll {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body.inv-lock-scroll #app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.inv-table-scroll {
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  overflow: auto;
+  overscroll-behavior: contain;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  scrollbar-width: thin;
+}
+
+/* Scrollbar visible solo en la tabla (el global la oculta) */
+.inv-table-scroll::-webkit-scrollbar {
+  display: block;
+  width: 6px;
+  height: 6px;
+}
+
+.inv-table-scroll::-webkit-scrollbar-thumb {
+  background: rgba(11, 28, 48, 0.28);
+  border-radius: 999px;
+}
+
+#inventarioDataTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #e8eef8;
+}
+
+thead .inv-sticky-n,
+thead .inv-sticky-codigo,
+thead .inv-sticky-sku,
+thead .inv-sticky-cant {
+  top: 0;
+  z-index: 6;
 }
 
 #inventarioTotalesBar .inv-excel-total-label {
