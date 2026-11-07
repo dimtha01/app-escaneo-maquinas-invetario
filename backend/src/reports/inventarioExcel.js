@@ -84,6 +84,7 @@ function styleGlobalRow(row, cols) {
   }
 }
 
+/** Cada escaneo/código cuenta como cantidad 1 */
 function totalesPorCodigo(items) {
   const map = new Map();
   for (const item of items) {
@@ -91,13 +92,12 @@ function totalesPorCodigo(items) {
       item.Articulo || item.CodigoBarra || item.codigo_escaneado || '—'
     ).trim();
     const desc = String(item.ITEMDESC || '—').trim();
-    const qty = Number(item.Cantidad ?? 1) || 1;
     const prev = map.get(codigo);
     if (prev) {
-      prev.cantidad += qty;
+      prev.cantidad += 1;
       if (prev.descripcion === '—' && desc !== '—') prev.descripcion = desc;
     } else {
-      map.set(codigo, { codigo, descripcion: desc, cantidad: qty });
+      map.set(codigo, { codigo, descripcion: desc, cantidad: 1 });
     }
   }
   return [...map.values()].sort((a, b) =>
@@ -109,8 +109,7 @@ function totalesPorEstatus(items) {
   const map = new Map();
   for (const item of items) {
     const estatus = String(item.estatus_nombre || 'Sin estatus').trim();
-    const qty = Number(item.Cantidad ?? 1) || 1;
-    map.set(estatus, (map.get(estatus) || 0) + qty);
+    map.set(estatus, (map.get(estatus) || 0) + 1);
   }
   return [...map.entries()]
     .map(([estatus, cantidad]) => ({ estatus, cantidad }))
@@ -171,7 +170,7 @@ export async function buildInventarioWorkbook(items, _meta = {}) {
       item.CodigoBarra || item.codigo_escaneado || '—',
       tienda,
       item.estatus_nombre || '—',
-      Number(item.Cantidad ?? 1) || 1,
+      1,
       item.UdM || 'UND',
     ];
     styleDataRow(row, i % 2 === 1);

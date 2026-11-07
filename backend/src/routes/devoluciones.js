@@ -228,7 +228,8 @@ router.post('/', (req, res) => {
   const codigoBarra =
     String(CodigoBarra ?? producto?.codigo_barra ?? codigoEscaneado).trim() || null;
   const itemdesc = String(ITEMDESC ?? producto?.itemdesc ?? '').trim() || null;
-  const cantidad = Number(Cantidad ?? producto?.cantidad ?? 1);
+  // Cada código escaneado cuenta como 1 (no usar Cantidad CEDIS)
+  const cantidad = 1;
   const udm = String(UdM ?? producto?.udm ?? 'UND').trim() || 'UND';
 
   const sesion = getOrCreateSesionActiva();
@@ -248,7 +249,7 @@ router.post('/', (req, res) => {
         articulo,
         codigoBarra,
         itemdesc,
-        Number.isFinite(cantidad) ? cantidad : 1,
+        cantidad,
         udm,
         sucursal.id,
         estatus.id,
