@@ -1411,36 +1411,42 @@ function renderInventarioConsolidado(list) {
         <td class="inv-sticky-codigo px-1.5 py-2 align-middle border-r border-surface-container-high">
           <div class="font-code-sm text-code-sm font-bold text-on-surface leading-tight">${escapeHtml(g.codigo)}</div>
         </td>
-        <td class="px-1.5 py-2 align-middle min-w-[200px] max-w-[340px]">
-          <div class="font-label-md text-label-md text-on-surface font-medium truncate whitespace-nowrap">${escapeHtml(g.descripcion)}</div>
+        <td class="inv-sticky-cant px-1 py-2 align-middle text-center border-r border-surface-container-high whitespace-nowrap">
+          <span class="font-code-md text-code-md font-black text-on-surface tabular-nums">${escapeHtml(g.cantidad)}</span>
+        </td>
+        <td class="px-2 py-2 align-middle min-w-[260px]">
+          <div class="font-label-md text-label-md text-on-surface font-medium leading-snug whitespace-normal break-words">${escapeHtml(g.descripcion)}</div>
         </td>
         <td class="px-1.5 py-2 align-middle whitespace-nowrap">
           <span class="font-code-sm text-code-sm font-bold text-on-surface">${escapeHtml(g.sku)}</span>
         </td>
-        <td class="px-2 py-2 align-middle text-center whitespace-nowrap">
-          <span class="inline-flex min-w-[2rem] items-center justify-center rounded-md bg-primary-fixed text-on-primary-fixed px-2 py-0.5 font-code-md text-code-md font-black tabular-nums">${escapeHtml(g.cantidad)}</span>
-        </td>
-        <td class="px-2 py-2 align-middle text-right">
-          <span class="material-symbols-outlined text-[20px] text-on-surface-variant">chevron_right</span>
+        <td class="px-1 py-2 align-middle text-center">
+          <span class="material-symbols-outlined text-[18px] text-on-surface-variant">chevron_right</span>
         </td>
       </tr>`;
     })
     .join('');
 
   list.innerHTML = `
-    <div class="px-gutter pb-2">
-      <p class="font-label-sm text-label-sm text-on-surface-variant font-semibold">Consolidado por código · toca una fila para ver registros</p>
+    <div class="px-gutter pb-2.5">
+      <div class="flex items-center gap-2">
+        <span class="material-symbols-outlined text-[18px] text-primary">inventory_2</span>
+        <div class="min-w-0">
+          <h2 class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight">Consolidado por código</h2>
+          <p class="font-label-sm text-label-sm text-on-surface-variant">Toca una fila para ver cada registro</p>
+        </div>
+      </div>
     </div>
     <div id="inventarioTableWrap" class="m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden">
       <div class="overflow-x-auto overscroll-x-contain touch-pan-x m-0 p-0" id="inventarioTableScroll">
-        <table class="w-full min-w-[560px] border-collapse text-left m-0" id="inventarioDataTable">
+        <table class="w-full min-w-[640px] border-collapse text-left m-0" id="inventarioDataTable">
           <thead>
             <tr class="bg-surface-container">
               <th class="inv-sticky-codigo px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high whitespace-nowrap">Código</th>
-              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Descripción</th>
+              <th class="inv-sticky-cant px-1 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide text-center border-r border-surface-container-high whitespace-nowrap">Cant.</th>
+              <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Descripción</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">SKU</th>
-              <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide text-center whitespace-nowrap">Cant.</th>
-              <th class="px-2 py-1.5 w-10"></th>
+              <th class="px-1 py-1.5 w-8"></th>
             </tr>
           </thead>
           <tbody class="bg-surface-container-lowest">
@@ -1472,23 +1478,19 @@ function renderInventarioDetalleCodigo(list) {
       const sku = item.CodigoBarra || item.codigo_escaneado || '—';
       const tienda = item.sucursal_codigo || item.sucursal_nombre || '—';
       const estatus = item.estatus_nombre || '—';
-      const n = item.orden ?? '—';
       return `
       <tr class="border-b border-surface-container-low hover:bg-surface-container-low/80" data-devolucion-id="${escapeHtml(item.id)}">
-        <td class="inv-sticky-n px-1 py-1.5 align-middle text-center border-r border-surface-container-high">
-          <span class="font-code-md text-code-md font-black text-on-surface tabular-nums">${escapeHtml(n)}</span>
-        </td>
-        <td class="px-1.5 py-1.5 align-middle whitespace-nowrap">
+        <td class="inv-sticky-sku px-1.5 py-1.5 align-middle border-r border-surface-container-high whitespace-nowrap">
           <span class="font-code-sm text-code-sm font-bold text-on-surface">${escapeHtml(sku)}</span>
+        </td>
+        <td class="inv-sticky-cant px-1 py-1.5 align-middle text-center border-r border-surface-container-high whitespace-nowrap">
+          <span class="font-code-md text-code-md font-black text-on-surface tabular-nums">1</span>
         </td>
         <td class="px-1.5 py-1.5 align-middle whitespace-nowrap">
           <span class="inline-flex items-center rounded-md bg-primary-fixed text-on-primary-fixed px-1.5 py-0.5 font-code-sm text-code-sm font-bold">${escapeHtml(tienda)}</span>
         </td>
         <td class="px-1.5 py-1.5 align-middle min-w-[110px]">
           <span class="font-label-sm text-label-sm text-on-surface font-semibold">${escapeHtml(estatus)}</span>
-        </td>
-        <td class="px-2 py-1.5 align-middle text-center">
-          <span class="font-code-md text-code-md font-black tabular-nums">1</span>
         </td>
         <td class="px-2 py-1.5 align-middle whitespace-nowrap text-right">
           <div class="inline-flex items-center gap-0.5">
@@ -1504,33 +1506,45 @@ function renderInventarioDetalleCodigo(list) {
     })
     .join('');
 
+  const registrosLabel = `${items.length} registro${items.length === 1 ? '' : 's'}`;
+
   list.innerHTML = `
-    <div class="px-gutter pb-2 flex flex-col gap-1.5">
-      <button type="button" id="invVolverConsolidado" class="self-start h-9 px-2.5 rounded-lg bg-surface-container text-on-surface border border-outline-variant inline-flex items-center gap-1 font-label-sm text-label-sm font-bold">
-        <span class="material-symbols-outlined text-[18px]">arrow_back</span>
-        Consolidado
-      </button>
-      <div>
-        <div class="font-code-md text-code-md font-black text-on-surface">${escapeHtml(codigo)}</div>
-        <div class="font-label-md text-label-md text-on-surface-variant font-medium truncate">${escapeHtml(desc)}</div>
-        <div class="font-label-sm text-label-sm text-on-surface-variant">${items.length} registro${items.length === 1 ? '' : 's'}</div>
+    <div class="px-gutter pb-3 flex flex-col gap-2">
+      <nav class="flex items-center gap-1.5 min-w-0" aria-label="Navegación inventario">
+        <button type="button" id="invVolverConsolidado" class="shrink-0 h-8 px-2 rounded-lg text-primary hover:bg-primary-fixed/40 inline-flex items-center gap-1 font-label-sm text-label-sm font-bold">
+          <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+          Consolidado
+        </button>
+        <span class="material-symbols-outlined text-[16px] text-outline shrink-0">chevron_right</span>
+        <span class="font-label-sm text-label-sm text-on-surface-variant font-semibold truncate">Detalle</span>
+      </nav>
+      <div class="rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2.5 flex items-start gap-3">
+        <div class="min-w-0 flex-1">
+          <p class="font-label-sm text-label-sm text-on-surface-variant font-semibold uppercase tracking-wide mb-0.5">Código</p>
+          <h2 id="invDetalleTitulo" class="font-code-md text-[18px] leading-6 font-black text-on-surface tracking-tight">${escapeHtml(codigo)}</h2>
+          <p class="mt-1 font-label-md text-label-md text-on-surface font-medium leading-snug">${escapeHtml(desc)}</p>
+        </div>
+        <div class="shrink-0 text-right">
+          <p class="font-label-sm text-label-sm text-on-surface-variant font-semibold uppercase tracking-wide mb-0.5">Cant.</p>
+          <p class="font-code-md text-[18px] leading-6 font-black text-on-surface tabular-nums">${items.length}</p>
+          <p class="mt-0.5 font-label-sm text-label-sm text-on-surface-variant">${registrosLabel}</p>
+        </div>
       </div>
     </div>
     <div id="inventarioTableWrap" class="m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden">
       <div class="overflow-x-auto overscroll-x-contain touch-pan-x m-0 p-0" id="inventarioTableScroll">
-        <table class="w-full min-w-[640px] border-collapse text-left m-0" id="inventarioDataTable">
+        <table class="w-full min-w-[560px] border-collapse text-left m-0" id="inventarioDataTable">
           <thead>
             <tr class="bg-surface-container">
-              <th class="inv-sticky-n px-1 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high text-center">N°</th>
-              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">SKU</th>
+              <th class="inv-sticky-sku px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high whitespace-nowrap">SKU</th>
+              <th class="inv-sticky-cant px-1 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide text-center border-r border-surface-container-high whitespace-nowrap">Cant.</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Tienda</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Estatus</th>
-              <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide text-center">Cant.</th>
               <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold w-16"></th>
             </tr>
           </thead>
           <tbody class="bg-surface-container-lowest">
-            ${rows || `<tr><td colspan="6" class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">Sin registros</td></tr>`}
+            ${rows || `<tr><td colspan="5" class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">Sin registros</td></tr>`}
           </tbody>
         </table>
       </div>

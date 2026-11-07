@@ -15,16 +15,56 @@ body {
 
 .inv-sticky-codigo {
   position: sticky;
-  left: 3rem;
+  left: 0;
+  z-index: 3;
+  background: #ffffff;
+  box-sizing: border-box;
+  width: 6.75rem;
+  min-width: 6.75rem;
+  max-width: 6.75rem;
+  box-shadow: none;
+}
+
+/* SKU fijo en detalle (sin N°) */
+.inv-sticky-sku {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: #ffffff;
+  box-sizing: border-box;
+  width: 7.5rem;
+  min-width: 7.5rem;
+  max-width: 7.5rem;
+  box-shadow: none;
+}
+
+/* Cant. fija al lado de Código (consolidado) o de SKU (detalle) */
+.inv-sticky-cant {
+  position: sticky;
+  left: 6.75rem;
   z-index: 2;
   background: #ffffff;
-  min-width: 6.5rem;
-  max-width: 7.5rem;
+  box-sizing: border-box;
+  width: 2.75rem;
+  min-width: 2.75rem;
+  max-width: 2.75rem;
+  box-shadow: 4px 0 8px -4px rgba(11, 28, 48, 0.18);
+}
+
+.inv-sticky-sku + .inv-sticky-cant {
+  left: 7.5rem;
+}
+
+/* Cuando Código va tras N° (historial), anclar después de 3rem y lleva la sombra */
+.inv-sticky-n + .inv-sticky-codigo {
+  left: 3rem;
   box-shadow: 4px 0 8px -4px rgba(11, 28, 48, 0.18);
 }
 
 thead .inv-sticky-n,
-thead .inv-sticky-codigo {
+thead .inv-sticky-codigo,
+thead .inv-sticky-sku,
+thead .inv-sticky-cant {
   z-index: 4;
   background: #e8eef8;
 }
