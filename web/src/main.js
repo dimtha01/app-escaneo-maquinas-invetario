@@ -1380,6 +1380,39 @@ function renderInventarioList() {
   });
 }
 
+async function descargarReporteInventario() {
+  const btn = document.getElementById('inventarioExcelBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const url = api.devoluciones.inventarioExcelUrl({
+      q: state.inventario.q,
+      sucursalId: state.inventario.sucursalId,
+    });
+    const res = await fetch(url);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Error HTTP ${res.status}`);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const match = /filename="([^"]+)"/.exec(cd);
+    const filename = match?.[1] || 'reporte-inventario.xlsx';
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(href);
+    showToast('Reporte Excel descargado.');
+  } catch (err) {
+    showToast(err.message || 'No se pudo descargar el reporte.');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function renderInventarioView() {
   app.innerHTML = `
   <main class="flex-1 flex flex-col relative w-full pb-36 bg-surface pt-4 pt-safe">
@@ -1388,6 +1421,10 @@ function renderInventarioView() {
         <div class="flex items-center gap-1.5 bg-surface-container-lowest rounded-lg p-1">
           <span class="material-symbols-outlined text-[20px] text-on-surface-variant ml-1">search</span>
           <input id="inventarioSearch" class="flex-1 bg-transparent font-body-md text-body-md text-on-surface px-1 h-9 focus:outline-none min-w-0" placeholder="Buscar..." type="search" value="${escapeHtml(state.inventario.q)}" />
+          <button type="button" id="inventarioExcelBtn" class="h-9 px-2.5 rounded-lg bg-primary text-on-primary inline-flex items-center gap-1 shrink-0 font-label-sm text-label-sm font-bold" aria-label="Descargar reporte Excel">
+            <span class="material-symbols-outlined text-[18px]">download</span>
+            <span>Excel</span>
+          </button>
         </div>
         ${pickerHtml({ key: 'invTienda', icon: 'storefront', placeholder: 'Todas las tiendas', modal: true })}
       </div>
@@ -1439,6 +1476,10 @@ function bindInventarioEvents() {
       state.inventario.q = search.value.trim();
       loadInventario();
     }, 250);
+  });
+
+  document.getElementById('inventarioExcelBtn')?.addEventListener('click', () => {
+    descargarReporteInventario();
   });
 
   document.getElementById('invTiendaTrigger')?.addEventListener('click', (e) => {

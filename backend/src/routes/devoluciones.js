@@ -4,6 +4,7 @@ import {
   getOrCreateSesionActiva,
   getSiguienteOrden,
 } from '../db/sesiones.js';
+import { buildInventarioWorkbook } from '../reports/inventarioExcel.js';
 
 const router = Router();
 
@@ -118,6 +119,49 @@ router.get('/inventario', (req, res) => {
       cantidad: Number(totales.cantidad || 0),
     },
   });
+});
+
+/** Excel: detalle secuencial + totales por código + total global */
+router.get('/inventario/excel', async (req, res) => {
+  try {
+    const db = getDb();
+    const { whereSql, params } = buildFilters(req.query);
+    const items = db
+      .prepare(
+        `${listSql} ${whereSql}
+         ORDER BY COALESCE(d.orden, d.id) ASC
+         LIMIT 5000`
+      )
+      .all(params);
+
+    let filtroTienda = '';
+    if (req.query.sucursal_id) {
+      const s = db
+        .prepare('SELECT codigo, nombre FROM sucursales WHERE id = ?')
+        .get(Number(req.query.sucursal_id));
+      filtroTienda = s ? `${s.codigo} - ${s.nombre}` : String(req.query.sucursal_id);
+    } else if (req.query.tienda) {
+      filtroTienda = String(req.query.tienda);
+    }
+
+    const workbook = await buildInventarioWorkbook(items, {
+      filtroTienda,
+      filtroQ: req.query.q ? String(req.query.q) : '',
+    });
+
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const filename = `reporte-inventario-${stamp}.xlsx`;
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'No se pudo generar el Excel' });
+  }
 });
 
 router.get('/hoy/count', (_req, res) => {

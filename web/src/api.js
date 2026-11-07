@@ -52,5 +52,12 @@ export const api = {
       const qs = params.toString();
       return request(`/api/devoluciones/inventario${qs ? `?${qs}` : ''}`);
     },
+    inventarioExcelUrl: ({ q = '', sucursalId = '' } = {}) => {
+      const params = new URLSearchParams();
+      if (q) params.set('q', q);
+      if (sucursalId) params.set('sucursal_id', String(sucursalId));
+      const qs = params.toString();
+      return `/api/devoluciones/inventario/excel${qs ? `?${qs}` : ''}`;
+    },
   },
 };
