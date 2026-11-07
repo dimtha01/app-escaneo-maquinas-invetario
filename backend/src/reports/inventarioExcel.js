@@ -147,9 +147,9 @@ export async function buildInventarioWorkbook(items, _meta = {}) {
   const header = sheet.getRow(3);
   header.values = [
     'N°',
-    'Código',
+    'Código de producto',
     'Descripción',
-    'SKU',
+    'Código de barra',
     'Tienda',
     'Estatus',
     'Cantidad',
@@ -197,8 +197,8 @@ export async function buildInventarioWorkbook(items, _meta = {}) {
     };
   }
 
-  // —— Hoja 2: Totales por código ——
-  const totCodigo = workbook.addWorksheet('Totales por código', {
+  // —— Hoja 2: Totales por código de producto ——
+  const totCodigo = workbook.addWorksheet('Totales por código de producto', {
     views: [{ state: 'frozen', ySplit: 3 }],
   });
   totCodigo.columns = [
@@ -207,11 +207,11 @@ export async function buildInventarioWorkbook(items, _meta = {}) {
     { key: 'cantidad', width: 14 },
   ];
 
-  styleTitleBanner(totCodigo, 'A1:C1', 'TOTALES POR CÓDIGO');
+  styleTitleBanner(totCodigo, 'A1:C1', 'TOTALES POR CÓDIGO DE PRODUCTO');
   totCodigo.getRow(2).height = 6;
 
   const codHeader = totCodigo.getRow(3);
-  codHeader.values = ['Código', 'Descripción', 'Cantidad'];
+  codHeader.values = ['Código de producto', 'Descripción', 'Cantidad'];
   styleHeaderRow(codHeader);
 
   const gruposCodigo = totalesPorCodigo(items);

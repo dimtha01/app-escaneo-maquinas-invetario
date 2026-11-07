@@ -9,8 +9,8 @@ body {
   left: 0;
   z-index: 3;
   background: #ffffff;
-  min-width: 3rem;
-  width: 3rem;
+  min-width: 3.25rem;
+  width: 3.25rem;
 }
 
 .inv-sticky-codigo {
@@ -45,20 +45,38 @@ body {
   z-index: 2;
   background: #ffffff;
   box-sizing: border-box;
-  width: 2.75rem;
-  min-width: 2.75rem;
-  max-width: 2.75rem;
+  width: 4.25rem;
+  min-width: 4.25rem;
+  max-width: 4.25rem;
   box-shadow: 4px 0 8px -4px rgba(11, 28, 48, 0.18);
+}
+
+th .invSortBtn {
+  max-width: 100%;
+}
+
+th .invSortBtn .material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 600, 'GRAD' 0, 'opsz' 20;
 }
 
 .inv-sticky-sku + .inv-sticky-cant {
   left: 7.5rem;
 }
 
-/* Cuando Código va tras N° (historial), anclar después de 3rem y lleva la sombra */
+/* Cuando Código va tras N° (historial / consolidado) */
 .inv-sticky-n + .inv-sticky-codigo {
-  left: 3rem;
+  left: 3.25rem;
   box-shadow: 4px 0 8px -4px rgba(11, 28, 48, 0.18);
+}
+
+/* Si Cant. sigue al código, la sombra la lleva Cant. */
+.inv-sticky-codigo:has(+ .inv-sticky-cant) {
+  box-shadow: none;
+}
+
+/* N° + Código + Cant. (consolidado inventario) */
+.inv-sticky-n + .inv-sticky-codigo + .inv-sticky-cant {
+  left: calc(3.25rem + 6.75rem);
 }
 
 thead .inv-sticky-n,

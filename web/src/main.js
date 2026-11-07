@@ -50,6 +50,10 @@ const state = {
     /** 'consolidado' = por código; 'detalle' = registros de un código */
     vista: 'consolidado',
     detalleCodigo: null,
+    /** Orden consolidado: 'n' | 'cant' */
+    sortBy: 'n',
+    /** 'asc' | 'desc' */
+    sortDir: 'asc',
   },
   edit: {
     id: null,
@@ -78,9 +82,11 @@ function escapeHtml(value) {
 
 function formatTime(isoLike) {
   if (!isoLike) return '--:--';
+  const m = String(isoLike).match(/(\d{2}):(\d{2})/);
+  if (m) return `${m[1]}:${m[2]}`;
   const normalized = isoLike.includes('T') ? isoLike : `${isoLike.replace(' ', 'T')}Z`;
   const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) return isoLike.slice(11, 16) || '--:--';
+  if (Number.isNaN(date.getTime())) return '--:--';
   return date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
 }
 
@@ -246,10 +252,10 @@ function editDevolucionModalHtml() {
       <div class="flex flex-col gap-1">
         <label for="editCodigo" class="font-label-sm text-label-sm text-on-surface-variant font-semibold flex items-center gap-1">
           <span class="material-symbols-outlined text-primary text-[16px]">qr_code_2</span>
-          Código <span class="text-error">*</span>
+          Código de barra <span class="text-error">*</span>
         </label>
         <div class="flex items-center gap-2">
-          <input id="editCodigo" type="text" inputmode="numeric" autocomplete="off" class="flex-1 min-w-0 h-11 px-3 rounded-lg bg-surface-container-low border border-outline-variant font-code-md text-code-md text-on-surface focus:outline-none focus:border-primary" placeholder="Código de barras / artículo" />
+          <input id="editCodigo" type="text" inputmode="numeric" autocomplete="off" class="flex-1 min-w-0 h-11 px-3 rounded-lg bg-surface-container-low border border-outline-variant font-code-md text-code-md text-on-surface focus:outline-none focus:border-primary" placeholder="Código de barra" />
           <button type="button" id="editBuscarCodigoBtn" class="h-11 px-3 rounded-lg bg-primary text-on-primary font-label-md text-label-md shrink-0 inline-flex items-center gap-1">
             <span class="material-symbols-outlined text-[18px]">search</span>
             Buscar
@@ -264,7 +270,7 @@ function editDevolucionModalHtml() {
         </div>
         <div id="editProductoNombre" class="font-headline-sm text-headline-sm text-on-surface truncate">—</div>
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="font-code-sm text-code-sm text-on-surface-variant">Art. <span id="editProductoArticulo">—</span></span>
+          <span class="font-code-sm text-code-sm text-on-surface-variant">Código de producto <span id="editProductoArticulo">—</span></span>
           <span id="editProductoCodigoBarra" class="font-code-sm text-code-sm bg-surface-container px-1.5 py-0.5 rounded-DEFAULT text-on-secondary-container">—</span>
         </div>
         <div class="font-body-sm text-body-sm text-on-surface-variant">
@@ -374,9 +380,9 @@ function renderHistorial() {
           <thead>
             <tr class="bg-surface-container">
               <th class="inv-sticky-n px-1 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high text-center">N°</th>
-              <th class="inv-sticky-codigo px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high whitespace-nowrap">Código</th>
+              <th class="inv-sticky-codigo px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high leading-tight">Código de producto</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Descripción</th>
-              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">SKU</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide leading-tight">Código de barra</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Tienda</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Estatus</th>
               <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold w-16"></th>
@@ -1314,10 +1320,14 @@ function consolidarInventarioPorCodigo(items) {
     const codigo = inventarioCodigoKey(item);
     const desc = String(item.ITEMDESC || '—').trim();
     const sku = item.CodigoBarra || item.codigo_escaneado || '—';
+    const orden = Number(item.orden) || Number(item.id) || 0;
     const prev = map.get(codigo);
     if (prev) {
       prev.cantidad += 1;
       prev.items.push(item);
+      if (orden > 0 && (prev.primerOrden === 0 || orden < prev.primerOrden)) {
+        prev.primerOrden = orden;
+      }
       if (prev.descripcion === '—' && desc !== '—') prev.descripcion = desc;
     } else {
       map.set(codigo, {
@@ -1325,13 +1335,57 @@ function consolidarInventarioPorCodigo(items) {
         descripcion: desc,
         sku,
         cantidad: 1,
+        primerOrden: orden,
         items: [item],
       });
     }
   }
-  return [...map.values()].sort((a, b) =>
-    String(a.codigo).localeCompare(String(b.codigo), 'es', { numeric: true })
-  );
+  // Asigna N° fijo por primerOrden (1 = primero escaneado) y luego aplica sort UI
+  const grupos = [...map.values()].sort((a, b) => a.primerOrden - b.primerOrden);
+  grupos.forEach((g, i) => {
+    g.n = i + 1;
+  });
+  return ordenarGruposConsolidado(grupos);
+}
+
+function ordenarGruposConsolidado(grupos) {
+  const dir = state.inventario.sortDir === 'desc' ? -1 : 1;
+  const by = state.inventario.sortBy === 'cant' ? 'cant' : 'n';
+  return [...grupos].sort((a, b) => {
+    if (by === 'cant') {
+      const d = (Number(a.cantidad) || 0) - (Number(b.cantidad) || 0);
+      if (d !== 0) return d * dir;
+      return ((Number(a.n) || 0) - (Number(b.n) || 0)) * dir;
+    }
+    return ((Number(a.n) || 0) - (Number(b.n) || 0)) * dir;
+  });
+}
+
+function setInventarioSort(sortBy) {
+  if (state.inventario.sortBy === sortBy) {
+    state.inventario.sortDir = state.inventario.sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    state.inventario.sortBy = sortBy;
+    state.inventario.sortDir = 'asc';
+  }
+  if (state.inventario.vista === 'consolidado') {
+    renderInventarioList();
+  }
+}
+
+function sortHeaderLabel(label, key) {
+  const active = state.inventario.sortBy === key;
+  const icon = !active
+    ? 'unfold_more'
+    : state.inventario.sortDir === 'asc'
+      ? 'arrow_upward'
+      : 'arrow_downward';
+  const color = active ? 'text-primary' : 'text-on-surface-variant';
+  return `
+    <button type="button" class="invSortBtn inline-flex items-center justify-center gap-0.5 whitespace-nowrap ${color} hover:text-primary font-label-sm text-label-sm font-bold uppercase tracking-wide" data-sort="${key}" aria-label="Ordenar por ${escapeHtml(label)}">
+      <span>${escapeHtml(label)}</span>
+      <span class="material-symbols-outlined text-[14px] leading-none shrink-0" aria-hidden="true">${icon}</span>
+    </button>`;
 }
 
 function abrirDetalleCodigo(codigo) {
@@ -1404,10 +1458,19 @@ function renderInventarioList() {
 
 function renderInventarioConsolidado(list) {
   const grupos = consolidarInventarioPorCodigo(state.inventario.items);
+  const sortHint =
+    state.inventario.sortBy === 'cant'
+      ? `Cant. ${state.inventario.sortDir === 'asc' ? 'menor→mayor' : 'mayor→menor'}`
+      : `N° ${state.inventario.sortDir === 'asc' ? 'primero→último' : 'último→primero'}`;
+
   const rows = grupos
     .map((g) => {
+      const n = g.n;
       return `
-      <tr class="border-b border-surface-container-low hover:bg-primary-fixed/20 cursor-pointer invCodigoRow" data-codigo="${escapeHtml(g.codigo)}" role="button" tabindex="0">
+      <tr class="border-b border-surface-container-low hover:bg-primary-fixed/20 cursor-pointer invCodigoRow" data-codigo="${escapeHtml(g.codigo)}" data-n="${n}" data-cant="${escapeHtml(g.cantidad)}" role="button" tabindex="0">
+        <td class="inv-sticky-n px-1 py-2 align-middle text-center border-r border-surface-container-high">
+          <span class="font-code-md text-code-md font-black text-on-surface tabular-nums">${n}</span>
+        </td>
         <td class="inv-sticky-codigo px-1.5 py-2 align-middle border-r border-surface-container-high">
           <div class="font-code-sm text-code-sm font-bold text-on-surface leading-tight">${escapeHtml(g.codigo)}</div>
         </td>
@@ -1433,17 +1496,18 @@ function renderInventarioConsolidado(list) {
         <span class="material-symbols-outlined text-[18px] text-primary">inventory_2</span>
         <div class="min-w-0">
           <h2 class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight">Consolidado por código</h2>
-          <p class="font-label-sm text-label-sm text-on-surface-variant">Toca una fila para ver cada registro</p>
+          <p class="font-label-sm text-label-sm text-on-surface-variant">Orden: ${escapeHtml(sortHint)} · toca N° o Cant. para ordenar</p>
         </div>
       </div>
     </div>
     <div id="inventarioTableWrap" class="flex-1 min-h-0 m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden flex flex-col">
       <div class="inv-table-scroll m-0 p-0" id="inventarioTableScroll">
-        <table class="w-full min-w-[640px] border-collapse text-left m-0" id="inventarioDataTable">
+        <table class="w-full min-w-[680px] border-collapse text-left m-0" id="inventarioDataTable">
           <thead>
             <tr class="bg-surface-container">
+              <th class="inv-sticky-n px-0.5 py-1.5 border-r border-surface-container-high text-center">${sortHeaderLabel('N°', 'n')}</th>
               <th class="inv-sticky-codigo px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high whitespace-nowrap">Código</th>
-              <th class="inv-sticky-cant px-1 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide text-center border-r border-surface-container-high whitespace-nowrap">Cant.</th>
+              <th class="inv-sticky-cant px-0.5 py-1.5 border-r border-surface-container-high text-center">${sortHeaderLabel('Cant.', 'cant')}</th>
               <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Descripción</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">SKU</th>
               <th class="px-1 py-1.5 w-8"></th>
@@ -1455,6 +1519,14 @@ function renderInventarioConsolidado(list) {
         </table>
       </div>
     </div>`;
+
+  list.querySelectorAll('.invSortBtn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setInventarioSort(btn.dataset.sort);
+    });
+  });
 
   list.querySelectorAll('.invCodigoRow').forEach((row) => {
     const open = () => abrirDetalleCodigo(row.dataset.codigo);
@@ -1743,7 +1815,7 @@ function renderTriageView() {
             <button class="w-9 h-9 rounded-DEFAULT bg-surface-container text-on-surface flex items-center justify-center shrink-0" type="button" id="focusInputBtn" aria-label="Teclado">
               <span class="material-symbols-outlined text-[20px]">dialpad</span>
             </button>
-            <input class="flex-1 bg-transparent font-code-md text-code-md text-on-surface px-1 focus:outline-none min-w-0 font-semibold" id="barcodeInput" placeholder="Código..." type="text" value="" autocomplete="off" aria-label="Código" />
+            <input class="flex-1 bg-transparent font-code-md text-code-md text-on-surface px-1 focus:outline-none min-w-0 font-semibold" id="barcodeInput" placeholder="Código de barra..." type="text" value="" autocomplete="off" aria-label="Código de barra" />
             <button class="w-7 h-7 rounded-full text-secondary hover:text-on-surface flex items-center justify-center shrink-0" id="clearInputBtn" type="button" aria-label="Limpiar">
               <span class="material-symbols-outlined text-[18px]">cancel</span>
             </button>
@@ -1769,7 +1841,7 @@ function renderTriageView() {
             <div class="flex flex-col min-w-0 flex-1">
               <span id="productoNombre" class="font-headline-sm text-headline-sm text-on-surface truncate"></span>
               <div class="flex items-center gap-2 mt-0.5 flex-wrap">
-                <span class="font-code-sm text-code-sm text-on-surface-variant font-medium">Art. <span id="productoArticulo"></span></span>
+                <span class="font-code-sm text-code-sm text-on-surface-variant font-medium">Código de producto <span id="productoArticulo"></span></span>
                 <span class="font-code-sm text-code-sm bg-surface-container px-1.5 py-0.5 rounded-DEFAULT text-on-secondary-container" id="productoCodigoBarra"></span>
               </div>
               <div class="flex items-center gap-1 text-on-surface-variant mt-1">
@@ -1820,9 +1892,12 @@ function renderTriageView() {
       </div>
 
       <div class="w-full m-0 p-0 flex flex-col gap-2">
-        <div class="px-gutter flex items-center justify-between">
-          <span class="font-headline-sm text-headline-sm text-on-surface">Hoy</span>
-          <span id="historialCount" class="bg-primary-fixed text-on-primary-fixed font-code-sm text-code-sm px-2 py-0.5 rounded-full font-semibold">0</span>
+        <div class="px-gutter flex items-center justify-between gap-2">
+          <div class="min-w-0">
+            <span class="font-headline-sm text-headline-sm text-on-surface">Escaneados</span>
+            <p class="font-label-sm text-label-sm text-on-surface-variant">Todos · del último al primero</p>
+          </div>
+          <span id="historialCount" class="bg-primary-fixed text-on-primary-fixed font-code-sm text-code-sm px-2 py-0.5 rounded-full font-semibold shrink-0">0</span>
         </div>
         <div id="historialList" class="w-full m-0 p-0"></div>
       </div>

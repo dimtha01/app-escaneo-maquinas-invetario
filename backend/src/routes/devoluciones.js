@@ -38,9 +38,8 @@ function buildFilters(query = {}) {
   const where = [];
   const params = {};
 
-  if (query.hoy === '1' || query.hoy === 'true') {
-    where.push(`date(d.creado_en) = date('now')`);
-  }
+  // hoy=1: lista del triage (todos los escaneos, no solo el día). Sin filtro de fecha.
+  // Se conserva el flag solo para orden DESC en GET /.
 
   if (query.sesion_id) {
     where.push(`d.sesion_id = @sesion_id`);
@@ -80,13 +79,13 @@ function buildFilters(query = {}) {
 router.get('/', (req, res) => {
   const db = getDb();
   const { whereSql, params } = buildFilters(req.query);
-  // Hoy: último → primero; resto: primero → último
-  const ordenDir =
-    req.query.hoy === '1' || req.query.hoy === 'true' ? 'DESC' : 'ASC';
+  // Triage (hoy=1): todos los escaneos, del último al primero; resto: del primero al último
+  const isTriageLista = req.query.hoy === '1' || req.query.hoy === 'true';
+  const ordenDir = isTriageLista ? 'DESC' : 'ASC';
   const rows = db
     .prepare(
       `${listSql} ${whereSql}
-       ORDER BY COALESCE(d.sesion_id, 0) DESC, COALESCE(d.orden, d.id) ${ordenDir}
+       ORDER BY COALESCE(d.orden, d.id) ${ordenDir}
        LIMIT 500`
     )
     .all(params);
@@ -97,10 +96,11 @@ router.get('/inventario', (req, res) => {
   const db = getDb();
   const { whereSql, params } = buildFilters(req.query);
 
+  // Inventario: del más reciente al más antiguo
   const items = db
     .prepare(
       `${listSql} ${whereSql}
-       ORDER BY COALESCE(d.sesion_id, 0) DESC, COALESCE(d.orden, d.id) ASC
+       ORDER BY COALESCE(d.sesion_id, 0) DESC, COALESCE(d.orden, d.id) DESC
        LIMIT 1000`
     )
     .all(params);
@@ -173,8 +173,7 @@ router.get('/hoy/count', (_req, res) => {
   const row = getDb()
     .prepare(
       `SELECT COUNT(*) AS total
-       FROM devoluciones
-       WHERE date(creado_en) = date('now')`
+       FROM devoluciones`
     )
     .get();
   res.json({ total: row.total });
@@ -245,8 +244,8 @@ router.post('/', (req, res) => {
     const result = db
       .prepare(
         `INSERT INTO devoluciones
-          (producto_id, codigo_escaneado, articulo, codigo_barra, itemdesc, cantidad, udm, sucursal_id, estatus_id, sesion_id, orden, notas)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          (producto_id, codigo_escaneado, articulo, codigo_barra, itemdesc, cantidad, udm, sucursal_id, estatus_id, sesion_id, orden, notas, creado_en)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))`
       )
       .run(
         producto?.id ?? null,

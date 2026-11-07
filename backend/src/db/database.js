@@ -80,7 +80,7 @@ db.exec(`
     sesion_id INTEGER,
     orden INTEGER,
     notas TEXT,
-    creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+    creado_en TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE SET NULL,
     FOREIGN KEY (sucursal_id) REFERENCES sucursales(id),
     FOREIGN KEY (estatus_id) REFERENCES estatus_devolucion(id),
