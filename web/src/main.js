@@ -17,6 +17,8 @@ const state = {
   flashOn: false,
   muted: false,
   scanning: false,
+  /** Escaneo por cámara: off por defecto (pistola Bluetooth no lo necesita) */
+  cameraOn: localStorage.getItem('triageCameraOn') === '1',
   producto: null,
   sucursales: [],
   estatus: [],
@@ -1061,10 +1063,7 @@ async function guardarDevolucion() {
 function nuevoEscaneo() {
   state.producto = null;
   const input = document.getElementById('barcodeInput');
-  if (input) {
-    input.value = '';
-    input.focus();
-  }
+  if (input) input.value = '';
   renderProductoCard();
 }
 
@@ -1125,6 +1124,7 @@ async function confirmarNuevoEstatus() {
 }
 
 async function startScanner() {
+  if (!state.cameraOn) return;
   const regionId = 'scannerRegion';
   const region = document.getElementById(regionId);
   if (!region || state.scanning) return;
@@ -1424,26 +1424,37 @@ function renderTriageView() {
   <main class="flex-1 flex flex-col relative w-full pb-24 bg-surface pt-4 pt-safe">
     <div class="flex flex-col w-full">
       <div class="px-gutter pb-space-sm flex flex-col gap-1.5">
-        <div class="flex items-center justify-end gap-1.5">
-          <button class="w-8 h-8 rounded-full bg-surface-container text-on-surface flex items-center justify-center" id="flashToggle" type="button" aria-label="Flash">
-            <span class="material-symbols-outlined text-[18px]">flash_on</span>
-          </button>
-          <button class="w-8 h-8 rounded-full bg-surface-container text-on-surface flex items-center justify-center" id="beepToggle" type="button" aria-label="Sonido">
-            <span class="material-symbols-outlined text-[18px]">volume_up</span>
-          </button>
-        </div>
-        <div class="relative w-full h-[160px] rounded-xl bg-inverse-surface overflow-hidden shadow-md barcode-scanner-slot">
-          <div id="scannerRegion" class="absolute inset-0 z-[1]"></div>
-          <div id="barcodeGuide" class="hidden barcode-guide pointer-events-none z-[3]" aria-hidden="true">
-            <span class="barcode-guide-corner tl"></span>
-            <span class="barcode-guide-corner tr"></span>
-            <span class="barcode-guide-corner bl"></span>
-            <span class="barcode-guide-corner br"></span>
-            <span class="barcode-guide-laser"></span>
+        <button
+          type="button"
+          id="cameraToggle"
+          class="w-full h-10 rounded-xl bg-surface-container text-on-surface hover:bg-surface-container-high border border-outline-variant flex items-center justify-center gap-2 font-label-md text-label-md"
+          aria-pressed="${state.cameraOn ? 'true' : 'false'}"
+        >
+          <span class="material-symbols-outlined text-[20px]" id="cameraToggleIcon">${state.cameraOn ? 'videocam_off' : 'photo_camera'}</span>
+          <span id="cameraToggleLabel">${state.cameraOn ? 'Desactivar cámara' : 'Activar escaneo por cámara'}</span>
+        </button>
+        <div id="cameraPanel" class="${state.cameraOn ? 'flex' : 'hidden'} flex-col gap-1.5">
+          <div class="flex items-center justify-end gap-1.5">
+            <button class="w-8 h-8 rounded-full bg-surface-container text-on-surface flex items-center justify-center" id="flashToggle" type="button" aria-label="Flash">
+              <span class="material-symbols-outlined text-[18px]">flash_on</span>
+            </button>
+            <button class="w-8 h-8 rounded-full bg-surface-container text-on-surface flex items-center justify-center" id="beepToggle" type="button" aria-label="Sonido">
+              <span class="material-symbols-outlined text-[18px]">volume_up</span>
+            </button>
           </div>
-          <div id="scannerHintBar" class="hidden absolute inset-x-2 bottom-1 z-10 items-center justify-center bg-inverse-surface/90 backdrop-blur-sm py-0.5 px-2 rounded-md gap-1">
-            <span class="material-symbols-outlined text-primary-fixed text-[14px]">qr_code_scanner</span>
-            <span id="scannerHint" class="font-body-sm text-body-sm text-inverse-on-surface font-medium"></span>
+          <div class="relative w-full h-[160px] rounded-xl bg-inverse-surface overflow-hidden shadow-md barcode-scanner-slot">
+            <div id="scannerRegion" class="absolute inset-0 z-[1]"></div>
+            <div id="barcodeGuide" class="hidden barcode-guide pointer-events-none z-[3]" aria-hidden="true">
+              <span class="barcode-guide-corner tl"></span>
+              <span class="barcode-guide-corner tr"></span>
+              <span class="barcode-guide-corner bl"></span>
+              <span class="barcode-guide-corner br"></span>
+              <span class="barcode-guide-laser"></span>
+            </div>
+            <div id="scannerHintBar" class="hidden absolute inset-x-2 bottom-1 z-10 items-center justify-center bg-inverse-surface/90 backdrop-blur-sm py-0.5 px-2 rounded-md gap-1">
+              <span class="material-symbols-outlined text-primary-fixed text-[14px]">qr_code_scanner</span>
+              <span id="scannerHint" class="font-body-sm text-body-sm text-inverse-on-surface font-medium"></span>
+            </div>
           </div>
         </div>
       </div>
@@ -1552,12 +1563,15 @@ function renderTriageView() {
   fillSelects();
   renderHistorial();
   renderProductoCard();
-  startScanner();
+  if (state.cameraOn) startScanner();
 }
 
-/** Pistola Bluetooth (HID): buffer silencioso → pega el código completo de golpe */
-const WEDGE_MAX_GAP_MS = 45;
-const WEDGE_IDLE_MS = 70;
+/**
+ * Pistola Bluetooth (HID): no tipean el input.
+ * Acumulan en silencio → al terminar buscan el código y muestran el producto.
+ * Idle > latencia típica BT (~60–100ms) para no soltar tecla a tecla.
+ */
+const WEDGE_IDLE_MS = 150;
 const WEDGE_MIN_LEN = 6;
 
 function clearWedgeTimer() {
@@ -1577,25 +1591,19 @@ function wedgeTargetInput() {
   return document.getElementById('barcodeInput');
 }
 
-function appendCharsToInput(chars) {
-  const input = wedgeTargetInput();
-  if (!input || !chars) return;
-  input.value = `${input.value || ''}${chars}`;
-}
-
+/** Escaneo pistola: busca producto de una; el input solo refleja el código final */
 function flushWedgeBuffer(source = 'idle') {
   clearWedgeTimer();
   const codigo = String(state.wedge.buffer || '').trim();
   state.wedge.buffer = '';
   if (codigo.length < WEDGE_MIN_LEN) {
-    if (codigo) appendCharsToInput(codigo);
+    // Tipeo manual corto incompleto: devolver al input sin buscar
+    const input = wedgeTargetInput();
+    if (input && codigo) input.value = `${input.value || ''}${codigo}`;
     return;
   }
   const input = wedgeTargetInput();
-  if (input) {
-    input.value = codigo; // de golpe, no char a char
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  }
+  if (input) input.value = codigo;
   if (input?.id === 'editCodigo') {
     buscarCodigoEnEdit();
   } else {
@@ -1615,49 +1623,35 @@ function onBluetoothWedgeKeydown(e) {
     /^(INPUT|TEXTAREA|SELECT)$/.test(tag || '') && !isCodeField;
   if (isOtherField) return;
 
-  const now = Date.now();
-
-  if (e.key === 'Enter') {
-    if (state.wedge.buffer.length >= WEDGE_MIN_LEN) {
+  // Formulario = ingreso manual: si el usuario enfocó el input, tipéa normal
+  if (isCodeField) {
+    if (e.key === 'Enter') {
       e.preventDefault();
-      flushWedgeBuffer('enter');
-      return;
-    }
-    if (isCodeField) {
-      e.preventDefault();
-      clearWedgeTimer();
-      const leftover = state.wedge.buffer;
-      state.wedge.buffer = '';
-      if (leftover) appendCharsToInput(leftover);
       const value = String(target.value || '').trim();
+      if (!value) return;
       if (target.id === 'editCodigo') buscarCodigoEnEdit();
-      else if (value) buscarProducto(value);
+      else buscarProducto(value);
     }
+    return;
+  }
+
+  // Pistola sin foco en el form: captura global → busca producto
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (state.wedge.buffer.length >= WEDGE_MIN_LEN) flushWedgeBuffer('enter');
     return;
   }
 
   if (e.key.length !== 1) return;
 
-  const gap = now - state.wedge.lastAt;
-  // Corte de ráfaga: lo corto anterior era tipeo manual
-  if (state.wedge.buffer.length && gap > WEDGE_MAX_GAP_MS) {
-    if (state.wedge.buffer.length < WEDGE_MIN_LEN) {
-      appendCharsToInput(state.wedge.buffer);
-    }
-    state.wedge.buffer = '';
-  }
-
-  // Silenciar teclas de la pistola → no se ve lento char a char
   e.preventDefault();
+  e.stopPropagation();
   state.wedge.buffer += e.key;
-  state.wedge.lastAt = now;
+  state.wedge.lastAt = Date.now();
   clearWedgeTimer();
   state.wedge.timer = setTimeout(() => {
     if (state.wedge.buffer.length >= WEDGE_MIN_LEN) flushWedgeBuffer('idle');
-    else {
-      appendCharsToInput(state.wedge.buffer);
-      state.wedge.buffer = '';
-    }
+    else state.wedge.buffer = '';
   }, WEDGE_IDLE_MS);
 }
 
@@ -1667,10 +1661,47 @@ function bindBluetoothScanner() {
   state.wedge.bound = true;
 }
 
+function updateCameraToggleUi() {
+  const btn = document.getElementById('cameraToggle');
+  const icon = document.getElementById('cameraToggleIcon');
+  const label = document.getElementById('cameraToggleLabel');
+  const panel = document.getElementById('cameraPanel');
+  if (btn) btn.setAttribute('aria-pressed', state.cameraOn ? 'true' : 'false');
+  if (icon) icon.textContent = state.cameraOn ? 'videocam_off' : 'photo_camera';
+  if (label) {
+    label.textContent = state.cameraOn
+      ? 'Desactivar cámara'
+      : 'Activar escaneo por cámara';
+  }
+  if (panel) {
+    panel.classList.toggle('hidden', !state.cameraOn);
+    panel.classList.toggle('flex', state.cameraOn);
+  }
+  btn?.classList.toggle('bg-primary-fixed', state.cameraOn);
+  btn?.classList.toggle('text-on-primary-fixed', state.cameraOn);
+  btn?.classList.toggle('border-primary', state.cameraOn);
+}
+
+async function toggleCameraScan() {
+  state.cameraOn = !state.cameraOn;
+  localStorage.setItem('triageCameraOn', state.cameraOn ? '1' : '0');
+  updateCameraToggleUi();
+  if (state.cameraOn) {
+    await startScanner();
+  } else {
+    const guide = document.getElementById('barcodeGuide');
+    guide?.classList.add('hidden');
+    await stopScanner();
+  }
+}
+
 function bindTriageEvents() {
   bindBluetoothScanner();
-  // Mantener listo para pistola Bluetooth
-  queueMicrotask(() => document.getElementById('barcodeInput')?.focus());
+  // Pistola no necesita foco; el input es solo para tipeo manual (botón teclado)
+
+  document.getElementById('cameraToggle')?.addEventListener('click', () => {
+    toggleCameraScan();
+  });
 
   document.getElementById('flashToggle')?.addEventListener('click', (e) => {
     state.flashOn = !state.flashOn;
