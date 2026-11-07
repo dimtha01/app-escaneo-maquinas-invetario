@@ -20,6 +20,10 @@ const state = {
   /** Escaneo por cámara: off por defecto (pistola Bluetooth no lo necesita) */
   cameraOn: localStorage.getItem('triageCameraOn') === '1',
   producto: null,
+  /** Último código buscado (pistola/cámara); el input solo se usa en manual */
+  ultimoCodigo: '',
+  /** Token para ignorar respuestas viejas si se escanea otro código */
+  buscarSeq: 0,
   sucursales: [],
   estatus: [],
   historialHoy: [],
@@ -991,22 +995,34 @@ async function loadCatalogos() {
   }
 }
 
-async function buscarProducto(codigo) {
+async function buscarProducto(codigo, { fillInput = false } = {}) {
   const clean = String(codigo || '').trim();
   if (!clean) {
     showToast('Ingresa o escanea un código.');
     return;
   }
   const input = document.getElementById('barcodeInput');
-  if (input) input.value = clean;
+  // Solo el ingreso manual llena el formulario; pistola/cámara lo dejan vacío
+  if (input) {
+    if (fillInput) input.value = clean;
+    else input.value = '';
+  }
+  state.ultimoCodigo = clean;
+
+  // Nuevo escaneo: limpia la selección anterior y busca el nuevo
+  const seq = ++state.buscarSeq;
+  state.producto = null;
+  renderProductoCard();
 
   try {
     const producto = await api.productos.buscar(clean);
+    if (seq !== state.buscarSeq) return; // llegó una búsqueda más nueva
     state.producto = producto;
     playBeep();
     renderProductoCard();
     showToast(`Producto encontrado: ${producto.ITEMDESC}`);
   } catch (err) {
+    if (seq !== state.buscarSeq) return;
     state.producto = null;
     renderProductoCard();
     showToast(err.status === 404 ? `No encontrado: ${clean}` : err.message);
@@ -1014,7 +1030,11 @@ async function buscarProducto(codigo) {
 }
 
 async function guardarDevolucion() {
-  const codigo = document.getElementById('barcodeInput')?.value?.trim();
+  const codigo =
+    state.producto?.CodigoBarra ||
+    state.ultimoCodigo ||
+    document.getElementById('barcodeInput')?.value?.trim() ||
+    '';
   const sucursalId =
     document.getElementById('tiendaSelect')?.value || state.selectedTiendaId;
   const estatusId =
@@ -1062,6 +1082,7 @@ async function guardarDevolucion() {
 
 function nuevoEscaneo() {
   state.producto = null;
+  state.ultimoCodigo = '';
   const input = document.getElementById('barcodeInput');
   if (input) input.value = '';
   renderProductoCard();
@@ -1193,9 +1214,7 @@ async function startScanner() {
         const codigo = String(decodedText || '').trim();
         if (!codigo) return;
         playBeep();
-        const input = document.getElementById('barcodeInput');
-        if (input) input.value = codigo;
-        buscarProducto(codigo);
+        buscarProducto(codigo, { fillInput: false });
       },
       () => {}
     );
@@ -1591,23 +1610,20 @@ function wedgeTargetInput() {
   return document.getElementById('barcodeInput');
 }
 
-/** Escaneo pistola: busca producto de una; el input solo refleja el código final */
+/** Escaneo pistola: busca producto sin llenar el formulario (eso es solo manual) */
 function flushWedgeBuffer(source = 'idle') {
   clearWedgeTimer();
   const codigo = String(state.wedge.buffer || '').trim();
   state.wedge.buffer = '';
-  if (codigo.length < WEDGE_MIN_LEN) {
-    // Tipeo manual corto incompleto: devolver al input sin buscar
-    const input = wedgeTargetInput();
-    if (input && codigo) input.value = `${input.value || ''}${codigo}`;
-    return;
-  }
+  if (codigo.length < WEDGE_MIN_LEN) return;
+
   const input = wedgeTargetInput();
-  if (input) input.value = codigo;
+  document.getElementById('barcodeInput')?.blur();
   if (input?.id === 'editCodigo') {
+    input.value = codigo;
     buscarCodigoEnEdit();
   } else {
-    buscarProducto(codigo);
+    buscarProducto(codigo, { fillInput: false });
   }
 }
 
@@ -1630,7 +1646,7 @@ function onBluetoothWedgeKeydown(e) {
       const value = String(target.value || '').trim();
       if (!value) return;
       if (target.id === 'editCodigo') buscarCodigoEnEdit();
-      else buscarProducto(value);
+      else buscarProducto(value, { fillInput: true });
     }
     return;
   }
@@ -1731,7 +1747,9 @@ function bindTriageEvents() {
   });
 
   document.getElementById('buscarBtn')?.addEventListener('click', () => {
-    buscarProducto(document.getElementById('barcodeInput')?.value);
+    buscarProducto(document.getElementById('barcodeInput')?.value, {
+      fillInput: true,
+    });
   });
 
   // Enter en input lo maneja onBluetoothWedgeKeydown (capture)
