@@ -45,7 +45,11 @@ const state = {
     totales: { registros: 0, cantidad: 0 },
     q: '',
     sucursalId: '',
+    estatusId: '',
     loading: false,
+    /** 'consolidado' = por código; 'detalle' = registros de un código */
+    vista: 'consolidado',
+    detalleCodigo: null,
   },
   edit: {
     id: null,
@@ -700,7 +704,7 @@ function pickerHtml({ key, icon = 'list', placeholder = 'Seleccionar', modal = f
 }
 
 function closeAllMenus() {
-  ['status', 'editStatus'].forEach((key) => {
+  ['status', 'editStatus', 'invEstatus'].forEach((key) => {
     document.getElementById(`${key}Menu`)?.classList.add('hidden');
     const chevron = document.getElementById(`${key}TriggerChevron`);
     if (chevron) chevron.textContent = 'expand_more';
@@ -860,6 +864,37 @@ function renderInvTiendaSelect() {
   });
 }
 
+function renderInvEstatusSelect() {
+  if (
+    state.inventario.estatusId &&
+    !state.estatus.some((e) => String(e.id) === String(state.inventario.estatusId))
+  ) {
+    state.inventario.estatusId = '';
+  }
+
+  renderPickerMenu({
+    key: 'invEstatus',
+    options: [
+      { value: '', label: 'Todos los estatus', icon: 'filter_list' },
+      ...state.estatus.map((e) => ({
+        value: String(e.id),
+        label: e.nombre,
+        icon: e.icono || 'report',
+      })),
+    ],
+    value: state.inventario.estatusId ? String(state.inventario.estatusId) : '',
+    placeholder: 'Todos los estatus',
+    defaultIcon: 'filter_list',
+    onSelect: (v) => {
+      state.inventario.estatusId = v ? String(v) : '';
+      state.inventario.vista = 'consolidado';
+      state.inventario.detalleCodigo = null;
+      renderInvEstatusSelect();
+      loadInventario();
+    },
+  });
+}
+
 async function openTiendaModal(mode) {
   closeAllMenus();
   state.tiendaModalMode = mode;
@@ -952,6 +987,8 @@ function renderTiendaModalGrid() {
       const value = btn.dataset.value ?? '';
       if (state.tiendaModalMode === 'inventario') {
         state.inventario.sucursalId = value;
+        state.inventario.vista = 'consolidado';
+        state.inventario.detalleCodigo = null;
         renderInvTiendaSelect();
         loadInventario();
       } else if (state.tiendaModalMode === 'edit') {
@@ -1267,6 +1304,48 @@ async function stopScanner() {
 
 /* ---------------- Inventario ---------------- */
 
+function inventarioCodigoKey(item) {
+  return String(item.Articulo || item.CodigoBarra || item.codigo_escaneado || '—').trim();
+}
+
+function consolidarInventarioPorCodigo(items) {
+  const map = new Map();
+  for (const item of items) {
+    const codigo = inventarioCodigoKey(item);
+    const desc = String(item.ITEMDESC || '—').trim();
+    const sku = item.CodigoBarra || item.codigo_escaneado || '—';
+    const prev = map.get(codigo);
+    if (prev) {
+      prev.cantidad += 1;
+      prev.items.push(item);
+      if (prev.descripcion === '—' && desc !== '—') prev.descripcion = desc;
+    } else {
+      map.set(codigo, {
+        codigo,
+        descripcion: desc,
+        sku,
+        cantidad: 1,
+        items: [item],
+      });
+    }
+  }
+  return [...map.values()].sort((a, b) =>
+    String(a.codigo).localeCompare(String(b.codigo), 'es', { numeric: true })
+  );
+}
+
+function abrirDetalleCodigo(codigo) {
+  state.inventario.vista = 'detalle';
+  state.inventario.detalleCodigo = codigo;
+  renderInventarioList();
+}
+
+function volverConsolidadoInventario() {
+  state.inventario.vista = 'consolidado';
+  state.inventario.detalleCodigo = null;
+  renderInventarioList();
+}
+
 async function loadInventario() {
   state.inventario.loading = true;
   renderInventarioList();
@@ -1274,9 +1353,20 @@ async function loadInventario() {
     const data = await api.devoluciones.inventario({
       q: state.inventario.q,
       sucursalId: state.inventario.sucursalId,
+      estatusId: state.inventario.estatusId,
     });
     state.inventario.items = data.items || [];
     state.inventario.totales = data.totales || { registros: 0, cantidad: 0 };
+    // Si el código del detalle ya no tiene filas, volver al consolidado
+    if (state.inventario.vista === 'detalle' && state.inventario.detalleCodigo) {
+      const still = state.inventario.items.some(
+        (it) => inventarioCodigoKey(it) === state.inventario.detalleCodigo
+      );
+      if (!still) {
+        state.inventario.vista = 'consolidado';
+        state.inventario.detalleCodigo = null;
+      }
+    }
   } catch (err) {
     showToast(err.message || 'No se pudo cargar inventario');
     state.inventario.items = [];
@@ -1304,11 +1394,82 @@ function renderInventarioList() {
     return;
   }
 
-  const rows = state.inventario.items
+  if (state.inventario.vista === 'detalle' && state.inventario.detalleCodigo) {
+    renderInventarioDetalleCodigo(list);
+    return;
+  }
+
+  renderInventarioConsolidado(list);
+}
+
+function renderInventarioConsolidado(list) {
+  const grupos = consolidarInventarioPorCodigo(state.inventario.items);
+  const rows = grupos
+    .map((g) => {
+      return `
+      <tr class="border-b border-surface-container-low hover:bg-primary-fixed/20 cursor-pointer invCodigoRow" data-codigo="${escapeHtml(g.codigo)}" role="button" tabindex="0">
+        <td class="inv-sticky-codigo px-1.5 py-2 align-middle border-r border-surface-container-high">
+          <div class="font-code-sm text-code-sm font-bold text-on-surface leading-tight">${escapeHtml(g.codigo)}</div>
+        </td>
+        <td class="px-1.5 py-2 align-middle min-w-[200px] max-w-[340px]">
+          <div class="font-label-md text-label-md text-on-surface font-medium truncate whitespace-nowrap">${escapeHtml(g.descripcion)}</div>
+        </td>
+        <td class="px-1.5 py-2 align-middle whitespace-nowrap">
+          <span class="font-code-sm text-code-sm font-bold text-on-surface">${escapeHtml(g.sku)}</span>
+        </td>
+        <td class="px-2 py-2 align-middle text-center whitespace-nowrap">
+          <span class="inline-flex min-w-[2rem] items-center justify-center rounded-md bg-primary-fixed text-on-primary-fixed px-2 py-0.5 font-code-md text-code-md font-black tabular-nums">${escapeHtml(g.cantidad)}</span>
+        </td>
+        <td class="px-2 py-2 align-middle text-right">
+          <span class="material-symbols-outlined text-[20px] text-on-surface-variant">chevron_right</span>
+        </td>
+      </tr>`;
+    })
+    .join('');
+
+  list.innerHTML = `
+    <div class="px-gutter pb-2">
+      <p class="font-label-sm text-label-sm text-on-surface-variant font-semibold">Consolidado por código · toca una fila para ver registros</p>
+    </div>
+    <div id="inventarioTableWrap" class="m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden">
+      <div class="overflow-x-auto overscroll-x-contain touch-pan-x m-0 p-0" id="inventarioTableScroll">
+        <table class="w-full min-w-[560px] border-collapse text-left m-0" id="inventarioDataTable">
+          <thead>
+            <tr class="bg-surface-container">
+              <th class="inv-sticky-codigo px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high whitespace-nowrap">Código</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Descripción</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">SKU</th>
+              <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide text-center whitespace-nowrap">Cant.</th>
+              <th class="px-2 py-1.5 w-10"></th>
+            </tr>
+          </thead>
+          <tbody class="bg-surface-container-lowest">
+            ${rows}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  list.querySelectorAll('.invCodigoRow').forEach((row) => {
+    const open = () => abrirDetalleCodigo(row.dataset.codigo);
+    row.addEventListener('click', open);
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        open();
+      }
+    });
+  });
+}
+
+function renderInventarioDetalleCodigo(list) {
+  const codigo = state.inventario.detalleCodigo;
+  const items = state.inventario.items.filter((it) => inventarioCodigoKey(it) === codigo);
+  const desc = items[0]?.ITEMDESC || '—';
+
+  const rows = items
     .map((item) => {
-      const codigo = item.Articulo || '—';
       const sku = item.CodigoBarra || item.codigo_escaneado || '—';
-      const desc = item.ITEMDESC || '—';
       const tienda = item.sucursal_codigo || item.sucursal_nombre || '—';
       const estatus = item.estatus_nombre || '—';
       const n = item.orden ?? '—';
@@ -1316,12 +1477,6 @@ function renderInventarioList() {
       <tr class="border-b border-surface-container-low hover:bg-surface-container-low/80" data-devolucion-id="${escapeHtml(item.id)}">
         <td class="inv-sticky-n px-1 py-1.5 align-middle text-center border-r border-surface-container-high">
           <span class="font-code-md text-code-md font-black text-on-surface tabular-nums">${escapeHtml(n)}</span>
-        </td>
-        <td class="inv-sticky-codigo px-1.5 py-1.5 align-middle border-r border-surface-container-high">
-          <div class="font-code-sm text-code-sm font-bold text-on-surface leading-tight">${escapeHtml(codigo)}</div>
-        </td>
-        <td class="px-1.5 py-1.5 align-middle min-w-[200px] max-w-[300px]">
-          <div class="font-label-md text-label-md text-on-surface font-medium truncate whitespace-nowrap">${escapeHtml(desc)}</div>
         </td>
         <td class="px-1.5 py-1.5 align-middle whitespace-nowrap">
           <span class="font-code-sm text-code-sm font-bold text-on-surface">${escapeHtml(sku)}</span>
@@ -1331,6 +1486,9 @@ function renderInventarioList() {
         </td>
         <td class="px-1.5 py-1.5 align-middle min-w-[110px]">
           <span class="font-label-sm text-label-sm text-on-surface font-semibold">${escapeHtml(estatus)}</span>
+        </td>
+        <td class="px-2 py-1.5 align-middle text-center">
+          <span class="font-code-md text-code-md font-black tabular-nums">1</span>
         </td>
         <td class="px-2 py-1.5 align-middle whitespace-nowrap text-right">
           <div class="inline-flex items-center gap-0.5">
@@ -1347,26 +1505,40 @@ function renderInventarioList() {
     .join('');
 
   list.innerHTML = `
+    <div class="px-gutter pb-2 flex flex-col gap-1.5">
+      <button type="button" id="invVolverConsolidado" class="self-start h-9 px-2.5 rounded-lg bg-surface-container text-on-surface border border-outline-variant inline-flex items-center gap-1 font-label-sm text-label-sm font-bold">
+        <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+        Consolidado
+      </button>
+      <div>
+        <div class="font-code-md text-code-md font-black text-on-surface">${escapeHtml(codigo)}</div>
+        <div class="font-label-md text-label-md text-on-surface-variant font-medium truncate">${escapeHtml(desc)}</div>
+        <div class="font-label-sm text-label-sm text-on-surface-variant">${items.length} registro${items.length === 1 ? '' : 's'}</div>
+      </div>
+    </div>
     <div id="inventarioTableWrap" class="m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden">
       <div class="overflow-x-auto overscroll-x-contain touch-pan-x m-0 p-0" id="inventarioTableScroll">
-        <table class="w-full min-w-[700px] border-collapse text-left m-0" id="inventarioDataTable">
+        <table class="w-full min-w-[640px] border-collapse text-left m-0" id="inventarioDataTable">
           <thead>
             <tr class="bg-surface-container">
               <th class="inv-sticky-n px-1 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high text-center">N°</th>
-              <th class="inv-sticky-codigo px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high whitespace-nowrap">Código</th>
-              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Descripción</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">SKU</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Tienda</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Estatus</th>
+              <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide text-center">Cant.</th>
               <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold w-16"></th>
             </tr>
           </thead>
           <tbody class="bg-surface-container-lowest">
-            ${rows}
+            ${rows || `<tr><td colspan="6" class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">Sin registros</td></tr>`}
           </tbody>
         </table>
       </div>
     </div>`;
+
+  document.getElementById('invVolverConsolidado')?.addEventListener('click', () => {
+    volverConsolidadoInventario();
+  });
 
   list.querySelectorAll('.editDevolucionBtn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1387,6 +1559,7 @@ async function descargarReporteInventario() {
     const url = api.devoluciones.inventarioExcelUrl({
       q: state.inventario.q,
       sucursalId: state.inventario.sucursalId,
+      estatusId: state.inventario.estatusId,
     });
     const res = await fetch(url);
     if (!res.ok) {
@@ -1426,7 +1599,10 @@ function renderInventarioView() {
             <span>Excel</span>
           </button>
         </div>
-        ${pickerHtml({ key: 'invTienda', icon: 'storefront', placeholder: 'Todas las tiendas', modal: true })}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          ${pickerHtml({ key: 'invTienda', icon: 'storefront', placeholder: 'Todas las tiendas', modal: true })}
+          ${pickerHtml({ key: 'invEstatus', icon: 'filter_list', placeholder: 'Todos los estatus' })}
+        </div>
       </div>
     </div>
 
@@ -1450,12 +1626,20 @@ function renderInventarioView() {
   `;
 
   renderInvTiendaSelect();
+  renderInvEstatusSelect();
   bindInventarioEvents();
   bindTiendaModalEvents();
   bindEditDevolucionEvents();
   loadInventario();
   if (!state.sucursales.length || !state.estatus.length) {
-    loadCatalogos().catch(() => {});
+    loadCatalogos()
+      .then(() => {
+        if (state.view === 'inventario') {
+          renderInvTiendaSelect();
+          renderInvEstatusSelect();
+        }
+      })
+      .catch(() => {});
   }
 }
 
@@ -1474,6 +1658,8 @@ function bindInventarioEvents() {
     clearTimeout(timer);
     timer = setTimeout(() => {
       state.inventario.q = search.value.trim();
+      state.inventario.vista = 'consolidado';
+      state.inventario.detalleCodigo = null;
       loadInventario();
     }, 250);
   });
@@ -1485,6 +1671,10 @@ function bindInventarioEvents() {
   document.getElementById('invTiendaTrigger')?.addEventListener('click', (e) => {
     e.stopPropagation();
     openTiendaModal('inventario');
+  });
+  document.getElementById('invEstatusTrigger')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleMenu('invEstatus');
   });
   document.addEventListener('click', onDocumentClickCloseMenus);
 }

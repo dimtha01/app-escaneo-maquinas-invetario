@@ -45,17 +45,19 @@ export const api = {
       }),
     remove: (id) =>
       request(`/api/devoluciones/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-    inventario: ({ q = '', sucursalId = '' } = {}) => {
+    inventario: ({ q = '', sucursalId = '', estatusId = '' } = {}) => {
       const params = new URLSearchParams();
       if (q) params.set('q', q);
       if (sucursalId) params.set('sucursal_id', String(sucursalId));
+      if (estatusId) params.set('estatus_id', String(estatusId));
       const qs = params.toString();
       return request(`/api/devoluciones/inventario${qs ? `?${qs}` : ''}`);
     },
-    inventarioExcelUrl: ({ q = '', sucursalId = '' } = {}) => {
+    inventarioExcelUrl: ({ q = '', sucursalId = '', estatusId = '' } = {}) => {
       const params = new URLSearchParams();
       if (q) params.set('q', q);
       if (sucursalId) params.set('sucursal_id', String(sucursalId));
+      if (estatusId) params.set('estatus_id', String(estatusId));
       const qs = params.toString();
       return `/api/devoluciones/inventario/excel${qs ? `?${qs}` : ''}`;
     },

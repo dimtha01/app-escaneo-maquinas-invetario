@@ -55,6 +55,11 @@ function buildFilters(query = {}) {
     params.tienda = String(query.tienda).trim().toUpperCase();
   }
 
+  if (query.estatus_id) {
+    where.push(`d.estatus_id = @estatus_id`);
+    params.estatus_id = Number(query.estatus_id);
+  }
+
   if (query.q) {
     where.push(`(
       d.codigo_escaneado LIKE @q
