@@ -239,6 +239,7 @@ router.post('/', (req, res) => {
   const sesion = getOrCreateSesionActiva();
 
   // Orden correlativo: rellena huecos (si borras #2, el próximo usa #2).
+  // IMMEDIATE evita que dos requests lean el mismo hueco a la vez.
   const insertConOrden = db.transaction(() => {
     const orden = getSiguienteOrden();
     const result = db
@@ -261,18 +262,35 @@ router.post('/', (req, res) => {
         orden,
         notas ?? null
       );
+    db.prepare(
+      `INSERT INTO contador_orden (id, siguiente) VALUES (1, ?)
+       ON CONFLICT(id) DO UPDATE SET siguiente = excluded.siguiente`
+    ).run(orden + 1);
     return { orden, id: Number(result.lastInsertRowid) };
   });
 
   let created;
-  try {
-    created = insertConOrden();
-  } catch (err) {
-    if (String(err?.message || '').includes('UNIQUE')) {
-      created = insertConOrden();
-    } else {
+  let lastErr;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      created = insertConOrden.immediate();
+      break;
+    } catch (err) {
+      lastErr = err;
+      const msg = String(err?.message || '');
+      // UNIQUE orden (carrera) o SQLITE_BUSY / locked
+      if (
+        msg.includes('UNIQUE') ||
+        msg.includes('SQLITE_BUSY') ||
+        msg.includes('database is locked')
+      ) {
+        continue;
+      }
       throw err;
     }
+  }
+  if (!created) {
+    throw lastErr || new Error('No se pudo asignar orden correlativo');
   }
 
   const { orden, id } = created;

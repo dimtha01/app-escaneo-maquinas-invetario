@@ -35,27 +35,34 @@ export function getOrCreateSesionActiva() {
 /** Primer hueco libre (o max+1). Ej: [1,3] → 2. */
 export function getSiguienteOrden() {
   const db = getDb();
-  const rows = db
+  // Una sola query: el menor entero >= 1 que no exista en orden.
+  const row = db
     .prepare(
-      `SELECT orden
-       FROM devoluciones
-       WHERE orden IS NOT NULL
-       ORDER BY orden ASC`
+      `SELECT COALESCE(MIN(t.orden), 0) + 1 AS siguiente
+       FROM (
+         SELECT orden FROM devoluciones WHERE orden IS NOT NULL
+         UNION ALL
+         SELECT 0
+       ) t
+       WHERE NOT EXISTS (
+         SELECT 1 FROM devoluciones d WHERE d.orden = t.orden + 1
+       )`
     )
-    .all();
+    .get();
 
-  let expected = 1;
-  for (const row of rows) {
-    const n = Number(row.orden);
-    if (!Number.isFinite(n) || n < expected) continue;
-    if (n === expected) {
-      expected += 1;
-      continue;
-    }
-    // Hueco encontrado
-    break;
-  }
-  return expected;
+  const n = Number(row?.siguiente);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+/** Sincroniza contador_orden con el próximo hueco/max+1. */
+export function syncContadorOrden() {
+  const db = getDb();
+  const siguiente = getSiguienteOrden();
+  db.prepare(
+    `INSERT INTO contador_orden (id, siguiente) VALUES (1, ?)
+     ON CONFLICT(id) DO UPDATE SET siguiente = excluded.siguiente`
+  ).run(siguiente);
+  return siguiente;
 }
 
 export function getResumenOrden() {

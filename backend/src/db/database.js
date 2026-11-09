@@ -115,15 +115,26 @@ db.exec(`
   WHERE orden IS NOT NULL;
 `);
 
-// Contador global compartido por todos los dispositivos (una sola secuencia)
-const contador = db.prepare('SELECT siguiente FROM contador_orden WHERE id = 1').get();
-if (!contador) {
-  const maxOrden = db
-    .prepare(`SELECT COALESCE(MAX(orden), 0) AS max_orden FROM devoluciones`)
+// Contador global: siempre alinear con el próximo hueco/max+1 al arrancar.
+{
+  const gap = db
+    .prepare(
+      `SELECT COALESCE(MIN(t.orden), 0) + 1 AS siguiente
+       FROM (
+         SELECT orden FROM devoluciones WHERE orden IS NOT NULL
+         UNION ALL
+         SELECT 0
+       ) t
+       WHERE NOT EXISTS (
+         SELECT 1 FROM devoluciones d WHERE d.orden = t.orden + 1
+       )`
+    )
     .get();
+  const siguiente = Number(gap?.siguiente) > 0 ? Number(gap.siguiente) : 1;
   db.prepare(
-    `INSERT INTO contador_orden (id, siguiente) VALUES (1, ?)`
-  ).run(Number(maxOrden?.max_orden || 0) + 1);
+    `INSERT INTO contador_orden (id, siguiente) VALUES (1, ?)
+     ON CONFLICT(id) DO UPDATE SET siguiente = excluded.siguiente`
+  ).run(siguiente);
 }
 
 function ensureTiendasT01T49() {
