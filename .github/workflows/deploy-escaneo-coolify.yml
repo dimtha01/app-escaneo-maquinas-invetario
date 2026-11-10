@@ -1,0 +1,20 @@
+name: Deploy Escaneo Coolify
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: escaneo-coolify-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, svratc, linux]
+    timeout-minutes: 45
+    steps:
+      - name: Deploy to Coolify Escaneo
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/bin/escaneo-coolify-deploy.sh
