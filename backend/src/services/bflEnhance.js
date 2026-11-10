@@ -4,8 +4,34 @@
  * 2) Si falla, FLUX Deblur (solo nitidez; no aplica fondo blanco)
  */
 import fs from 'node:fs';
+import { ProxyAgent, fetch as undiciFetch } from 'undici';
 
 const BFL_BASE = 'https://api.bfl.ai';
+
+/** Proxy opcional (ej. gluetun HTTP proxy) — la IP del servidor SVRATC está bloqueada por BFL/Azure. */
+function getProxyUri() {
+  return String(
+    process.env.BFL_HTTP_PROXY || process.env.HTTPS_PROXY || process.env.HTTP_PROXY || ''
+  ).trim();
+}
+
+let proxyAgent = null;
+function getDispatcher() {
+  const uri = getProxyUri();
+  if (!uri) return undefined;
+  if (!proxyAgent) {
+    proxyAgent = new ProxyAgent(uri);
+    console.log(`[BFL] using HTTP proxy ${uri.replace(/\/\/.*@/, '//***@')}`);
+  }
+  return proxyAgent;
+}
+
+/** fetch que respeta BFL_HTTP_PROXY (Node fetch nativo ignora HTTPS_PROXY). */
+function bflFetch(url, options = {}) {
+  const dispatcher = getDispatcher();
+  if (!dispatcher) return fetch(url, options);
+  return undiciFetch(url, { ...options, dispatcher });
+}
 
 const ENHANCE_PROMPT = [
   'You are an expert commercial product photographer and professional image retouching specialist.',
@@ -167,7 +193,7 @@ async function pollResult(pollingUrl, { timeoutMs = 120000, method = 'flux-2' } 
     let res;
     let data = {};
     try {
-      res = await fetch(pollingUrl, {
+      res = await bflFetch(pollingUrl, {
         headers: { accept: 'application/json', 'x-key': key },
         signal: t.signal,
       });
@@ -272,7 +298,7 @@ async function submitJob(path, body) {
   let res;
   let data = {};
   try {
-    res = await fetch(`${BFL_BASE}${path}`, {
+    res = await bflFetch(`${BFL_BASE}${path}`, {
       method: 'POST',
       headers: {
         accept: 'application/json',
@@ -336,7 +362,7 @@ async function downloadToFile(url, destPath) {
   const t = withTimeout(60000, 'BFL download');
   let res;
   try {
-    res = await fetch(url, { signal: t.signal });
+    res = await bflFetch(url, { signal: t.signal });
     if (!res.ok) throw new Error(`No se pudo descargar imagen BFL (${res.status})`);
     const buf = Buffer.from(await res.arrayBuffer());
     fs.writeFileSync(destPath, buf);
