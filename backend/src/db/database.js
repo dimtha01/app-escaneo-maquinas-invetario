@@ -113,7 +113,24 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_devoluciones_orden_unique
   ON devoluciones(orden)
   WHERE orden IS NOT NULL;
+
+  CREATE TABLE IF NOT EXISTS producto_imagenes (
+    codigo TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    original_name TEXT,
+    actualizado_en TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+  );
 `);
+
+const imagenesDir = path.join(dataDir, 'producto-imagenes');
+if (!fs.existsSync(imagenesDir)) {
+  fs.mkdirSync(imagenesDir, { recursive: true });
+}
+
+export function getProductoImagenesDir() {
+  return imagenesDir;
+}
 
 // Contador global: siempre alinear con el próximo hueco/max+1 al arrancar.
 {

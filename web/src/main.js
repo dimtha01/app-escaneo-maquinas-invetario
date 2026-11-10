@@ -55,6 +55,20 @@ const state = {
     /** 'asc' | 'desc' */
     sortDir: 'asc',
   },
+  imagenes: {
+    items: [],
+    totales: { codigos: 0, conImagen: 0, sinImagen: 0 },
+    q: '',
+    loading: false,
+    uploadingCodigo: null,
+    /** 'original' | 'ai' | null */
+    uploadingMode: null,
+    bflConfigured: false,
+    apifyConfigured: false,
+    googleJob: null,
+    /** Preview IA pendiente de aceptar/descartar */
+    enhancePreview: null,
+  },
   edit: {
     id: null,
     orden: null,
@@ -141,12 +155,14 @@ function showToast(message) {
 function currentHashView() {
   const hash = (location.hash || '#triage').replace('#', '');
   if (hash === 'inventario') return 'inventario';
+  if (hash === 'imagenes' || hash === 'carga-img') return 'imagenes';
   return 'triage';
 }
 
 function navHtml() {
   const triageActive = state.view === 'triage';
   const invActive = state.view === 'inventario';
+  const imgActive = state.view === 'imagenes';
   const active = 'text-primary font-bold';
   const idle = 'text-on-surface-variant hover:text-on-surface';
   return `
@@ -163,12 +179,12 @@ function navHtml() {
         </div>
         <span class="font-label-sm text-label-sm">Inventario</span>
       </a>
-      <a class="relative flex flex-col items-center justify-center min-w-[72px] h-12 gap-0.5 ${idle} transition-colors" href="#triage">
+      <a class="relative flex flex-col items-center justify-center min-w-[72px] h-12 gap-0.5 ${imgActive ? active : idle} transition-colors" href="#imagenes" data-nav="imagenes">
         <div class="relative">
-          <span class="material-symbols-outlined text-[22px]">inventory_2</span>
-          <span id="navHistorialCount" class="absolute -top-1 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-surface-container-high text-on-surface font-code-sm text-[10px] flex items-center justify-center font-semibold">${state.historialHoy.length}</span>
+          <span class="material-symbols-outlined text-[22px]">add_photo_alternate</span>
+          <span id="navImagenesCount" class="absolute -top-1 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-surface-container-high text-on-surface font-code-sm text-[10px] flex items-center justify-center font-semibold">${state.imagenes.totales.codigos || 0}</span>
         </div>
-        <span class="font-label-sm text-label-sm">Historial</span>
+        <span class="font-label-sm text-label-sm">Carga img</span>
       </a>
       <a class="flex flex-col items-center justify-center min-w-[72px] h-12 gap-0.5 ${idle} transition-colors" href="#triage">
         <span class="material-symbols-outlined text-[22px]">settings_input_component</span>
@@ -1506,10 +1522,10 @@ function renderInventarioConsolidado(list) {
           <thead>
             <tr class="bg-surface-container">
               <th class="inv-sticky-n px-0.5 py-1.5 border-r border-surface-container-high text-center">${sortHeaderLabel('N°', 'n')}</th>
-              <th class="inv-sticky-codigo px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high whitespace-nowrap">Código</th>
+              <th class="inv-sticky-codigo px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high leading-tight">Código de producto</th>
               <th class="inv-sticky-cant px-0.5 py-1.5 border-r border-surface-container-high text-center">${sortHeaderLabel('Cant.', 'cant')}</th>
               <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Descripción</th>
-              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">SKU</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide leading-tight">Código de barra</th>
               <th class="px-1 py-1.5 w-8"></th>
             </tr>
           </thead>
@@ -1592,7 +1608,7 @@ function renderInventarioDetalleCodigo(list) {
       </nav>
       <div class="rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2.5 flex items-start gap-3">
         <div class="min-w-0 flex-1">
-          <p class="font-label-sm text-label-sm text-on-surface-variant font-semibold uppercase tracking-wide mb-0.5">Código</p>
+          <p class="font-label-sm text-label-sm text-on-surface-variant font-semibold uppercase tracking-wide mb-0.5">Código de producto</p>
           <h2 id="invDetalleTitulo" class="font-code-md text-[18px] leading-6 font-black text-on-surface tracking-tight">${escapeHtml(codigo)}</h2>
           <p class="mt-1 font-label-md text-label-md text-on-surface font-medium leading-snug">${escapeHtml(desc)}</p>
         </div>
@@ -1608,7 +1624,7 @@ function renderInventarioDetalleCodigo(list) {
         <table class="w-full min-w-[560px] border-collapse text-left m-0" id="inventarioDataTable">
           <thead>
             <tr class="bg-surface-container">
-              <th class="inv-sticky-sku px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high whitespace-nowrap">SKU</th>
+              <th class="inv-sticky-sku px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high leading-tight">Código de barra</th>
               <th class="inv-sticky-cant px-1 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide text-center border-r border-surface-container-high whitespace-nowrap">Cant.</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Tienda</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Estatus</th>
@@ -2128,7 +2144,498 @@ function onDocumentClickCloseMenus(e) {
   closeAllMenus();
 }
 
-/* ---------------- Router ---------------- */
+/* ---------------- Carga de imágenes ---------------- */
+
+async function loadImagenesProductos() {
+  state.imagenes.loading = true;
+  renderImagenesList();
+  try {
+    const data = await api.productoImagenes.list({ q: state.imagenes.q });
+    state.imagenes.items = data.items || [];
+    state.imagenes.totales = data.totales || {
+      codigos: 0,
+      conImagen: 0,
+      sinImagen: 0,
+    };
+  } catch (err) {
+    showToast(err.message || 'No se pudo cargar códigos');
+    state.imagenes.items = [];
+    state.imagenes.totales = { codigos: 0, conImagen: 0, sinImagen: 0 };
+  } finally {
+    state.imagenes.loading = false;
+    renderImagenesList();
+    const nav = document.getElementById('navImagenesCount');
+    if (nav) nav.textContent = String(state.imagenes.totales.codigos || 0);
+  }
+}
+
+function renderImagenesTotales() {
+  const con = document.getElementById('imgTotalCon');
+  const sin = document.getElementById('imgTotalSin');
+  const all = document.getElementById('imgTotalCodigos');
+  if (con) con.textContent = String(state.imagenes.totales.conImagen || 0);
+  if (sin) sin.textContent = String(state.imagenes.totales.sinImagen || 0);
+  if (all) all.textContent = String(state.imagenes.totales.codigos || 0);
+}
+
+function renderImagenesList() {
+  const list = document.getElementById('imagenesList');
+  renderImagenesTotales();
+  if (!list) return;
+
+  if (state.imagenes.loading) {
+    list.innerHTML = `<div class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">Cargando códigos...</div>`;
+    return;
+  }
+
+  if (!state.imagenes.items.length) {
+    list.innerHTML = `<div class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">Sin códigos únicos para mostrar</div>`;
+    return;
+  }
+
+  const cards = state.imagenes.items
+    .map((item) => {
+      const uploading = state.imagenes.uploadingCodigo === item.codigo;
+      const mode = uploading ? state.imagenes.uploadingMode : null;
+      const thumb = item.tieneImagen && item.imagenUrl
+        ? `<img src="${escapeHtml(item.imagenUrl)}" alt="${escapeHtml(item.codigo)}" class="w-full h-full object-cover" loading="lazy" />`
+        : `<span class="material-symbols-outlined text-[36px] text-on-surface-variant">image</span>`;
+      return `
+      <article class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden flex flex-col" data-codigo="${escapeHtml(item.codigo)}">
+        <div class="aspect-square bg-surface-container flex items-center justify-center overflow-hidden relative">
+          ${thumb}
+          ${
+            item.tieneImagen
+              ? `<span class="absolute top-1.5 right-1.5 h-6 px-1.5 rounded-md bg-primary text-on-primary font-label-sm text-[10px] font-bold inline-flex items-center">OK</span>`
+              : `<span class="absolute top-1.5 right-1.5 h-6 px-1.5 rounded-md bg-surface-container-high text-on-surface-variant font-label-sm text-[10px] font-bold inline-flex items-center">Sin img</span>`
+          }
+        </div>
+        <div class="p-2.5 flex flex-col gap-1.5 flex-1">
+          <div class="min-w-0">
+            <p class="font-code-sm text-code-sm font-black text-on-surface truncate">${escapeHtml(item.codigo)}</p>
+            <p class="font-label-sm text-label-sm text-on-surface-variant line-clamp-2 leading-snug">${escapeHtml(item.descripcion)}</p>
+            <p class="font-label-sm text-[10px] text-on-surface-variant mt-0.5">Barra: ${escapeHtml(item.codigoBarra)} · Cant. ${escapeHtml(item.cantidad)}</p>
+          </div>
+          <div class="mt-auto grid grid-cols-2 gap-1.5">
+            <label class="h-9 rounded-lg bg-surface-container-high text-on-surface border border-outline-variant inline-flex items-center justify-center gap-0.5 font-label-sm text-[11px] font-bold cursor-pointer ${uploading ? 'opacity-60 pointer-events-none' : ''}">
+              <span class="material-symbols-outlined text-[15px]">${mode === 'original' ? 'hourglass_top' : 'upload'}</span>
+              <span>${mode === 'original' ? 'Subiendo…' : 'Subir'}</span>
+              <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden imgUploadOriginal" data-codigo="${escapeHtml(item.codigo)}" ${uploading ? 'disabled' : ''} />
+            </label>
+            <button type="button" class="imgEnhanceBtn h-9 rounded-lg bg-primary text-on-primary inline-flex items-center justify-center gap-0.5 font-label-sm text-[11px] font-bold ${uploading || !item.tieneImagen ? 'opacity-60' : ''}" data-codigo="${escapeHtml(item.codigo)}" ${uploading || !item.tieneImagen ? 'disabled' : ''} title="${item.tieneImagen ? 'Mejorar la imagen ya subida' : 'Primero sube una imagen'}">
+              <span class="material-symbols-outlined text-[15px]">${mode === 'ai' ? 'hourglass_top' : 'auto_fix_high'}</span>
+              <span>${mode === 'ai' ? 'IA…' : 'IA'}</span>
+            </button>
+          </div>
+          ${
+            item.tieneImagen
+              ? `<button type="button" class="imgDeleteBtn h-8 w-full rounded-lg bg-error-container/40 text-error inline-flex items-center justify-center gap-1 font-label-sm text-label-sm font-bold" data-codigo="${escapeHtml(item.codigo)}" ${uploading ? 'disabled' : ''}>
+                   <span class="material-symbols-outlined text-[16px]">delete</span>
+                   Quitar imagen
+                 </button>`
+              : ''
+          }
+        </div>
+      </article>`;
+    })
+    .join('');
+
+  list.innerHTML = `<div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 px-gutter pb-28">${cards}</div>`;
+
+  list.querySelectorAll('.imgUploadOriginal').forEach((input) => {
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      const codigo = input.dataset.codigo;
+      input.value = '';
+      if (!file || !codigo) return;
+      await subirImagenProducto(codigo, file);
+    });
+  });
+
+  list.querySelectorAll('.imgEnhanceBtn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const codigo = btn.dataset.codigo;
+      if (!codigo) return;
+      await mejorarImagenProducto(codigo);
+    });
+  });
+
+  list.querySelectorAll('.imgDeleteBtn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const codigo = btn.dataset.codigo;
+      if (!codigo) return;
+      if (!window.confirm(`¿Quitar la imagen de ${codigo}?`)) return;
+      try {
+        await api.productoImagenes.remove(codigo);
+        showToast('Imagen eliminada');
+        await loadImagenesProductos();
+      } catch (err) {
+        showToast(err.message || 'No se pudo eliminar');
+      }
+    });
+  });
+}
+
+async function subirImagenProducto(codigo, file) {
+  state.imagenes.uploadingCodigo = codigo;
+  state.imagenes.uploadingMode = 'original';
+  renderImagenesList();
+  try {
+    await api.productoImagenes.upload(codigo, file);
+    showToast(`Original guardada · ${codigo}`);
+    await loadImagenesProductos();
+  } catch (err) {
+    showToast(err.message || 'No se pudo subir la imagen');
+  } finally {
+    state.imagenes.uploadingCodigo = null;
+    state.imagenes.uploadingMode = null;
+    renderImagenesList();
+  }
+}
+
+function openEnhancePreviewModal({ codigo, originalUrl, previewUrl, enhanceMethod }) {
+  state.imagenes.enhancePreview = { codigo, originalUrl, previewUrl, enhanceMethod };
+  const modal = document.getElementById('enhancePreviewModal');
+  const orig = document.getElementById('enhancePreviewOriginal');
+  const ai = document.getElementById('enhancePreviewAi');
+  const title = document.getElementById('enhancePreviewTitle');
+  const methodEl = document.getElementById('enhancePreviewMethod');
+  if (title) title.textContent = `¿Usar la mejora IA? · ${codigo}`;
+  if (methodEl) methodEl.textContent = enhanceMethod ? `Método: ${enhanceMethod}` : '';
+  if (orig) orig.src = originalUrl || '';
+  if (ai) ai.src = previewUrl || '';
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+  }
+}
+
+async function closeEnhancePreviewModal({ discard = false } = {}) {
+  const preview = state.imagenes.enhancePreview;
+  const modal = document.getElementById('enhancePreviewModal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+  const blank = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  const orig = document.getElementById('enhancePreviewOriginal');
+  const ai = document.getElementById('enhancePreviewAi');
+  if (orig) orig.src = blank;
+  if (ai) ai.src = blank;
+  state.imagenes.enhancePreview = null;
+  if (discard && preview?.codigo) {
+    try {
+      await api.productoImagenes.discardEnhance(preview.codigo);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function acceptEnhancePreview() {
+  const preview = state.imagenes.enhancePreview;
+  if (!preview?.codigo) return;
+  const codigo = preview.codigo;
+  try {
+    await api.productoImagenes.acceptEnhance(codigo);
+    showToast(`Imagen IA aplicada · ${codigo}`);
+    await closeEnhancePreviewModal({ discard: false });
+    await loadImagenesProductos();
+  } catch (err) {
+    showToast(err.message || 'No se pudo aplicar la imagen IA');
+  }
+}
+
+async function mejorarImagenProducto(codigo) {
+  state.imagenes.uploadingCodigo = codigo;
+  state.imagenes.uploadingMode = 'ai';
+  const started = Date.now();
+  let progressTimer = null;
+  const tickProgress = () => {
+    const secs = Math.floor((Date.now() - started) / 1000);
+    const btn = document.querySelector(`.imgEnhanceBtn[data-codigo="${CSS.escape(codigo)}"] span:last-child`);
+    if (btn && state.imagenes.uploadingCodigo === codigo) {
+      btn.textContent = `IA ${secs}s…`;
+    }
+  };
+  renderImagenesList();
+  tickProgress();
+  progressTimer = setInterval(tickProgress, 1000);
+  try {
+    const result = await api.productoImagenes.enhance(codigo);
+    state.imagenes.uploadingCodigo = null;
+    state.imagenes.uploadingMode = null;
+    clearInterval(progressTimer);
+    progressTimer = null;
+    renderImagenesList();
+    if (state.view !== 'imagenes') {
+      state.imagenes.enhancePreview = {
+        codigo,
+        originalUrl: result.originalUrl,
+        previewUrl: result.previewUrl,
+        enhanceMethod: result.enhanceMethod,
+      };
+      showToast(`IA lista · vuelve a Carga img para decidir · ${codigo}`);
+      return;
+    }
+    openEnhancePreviewModal({
+      codigo,
+      originalUrl: result.originalUrl,
+      previewUrl: result.previewUrl,
+      enhanceMethod: result.enhanceMethod,
+    });
+    if (!document.getElementById('enhancePreviewModal')) {
+      showToast('Preview lista pero no se pudo abrir el modal');
+    }
+  } catch (err) {
+    showToast(err.message || 'No se pudo mejorar la imagen');
+  } finally {
+    if (progressTimer) clearInterval(progressTimer);
+    state.imagenes.uploadingCodigo = null;
+    state.imagenes.uploadingMode = null;
+    if (state.view === 'imagenes' && !document.getElementById('enhancePreviewModal')?.classList.contains('flex')) {
+      renderImagenesList();
+    }
+  }
+}
+
+function updateGoogleJobUi(job) {
+  const el = document.getElementById('imagenesGoogleJob');
+  const btn = document.getElementById('imagenesGoogleBtn');
+  const label = document.getElementById('imagenesGoogleBtnLabel');
+  if (!el) return;
+  if (!job || job.status === 'idle') {
+    el.classList.add('hidden');
+    if (btn && state.imagenes.apifyConfigured) btn.disabled = false;
+    if (label) label.textContent = 'Buscar Google (sin img)';
+    return;
+  }
+  el.classList.remove('hidden');
+  const t = job.totales || {};
+  if (job.status === 'running') {
+    el.textContent = `Google Apify… productos ${t.productos || 0} · aplicadas ${t.aplicadas || 0} · con resultados ${t.conResultados || 0}`;
+    if (btn) btn.disabled = true;
+    if (label) label.textContent = 'Buscando Google…';
+  } else if (job.status === 'done') {
+    el.textContent = `Listo: ${t.aplicadas || 0} aplicadas · ${t.conResultados || 0} con resultados · ${t.errores || 0} errores`;
+    if (btn && state.imagenes.apifyConfigured) btn.disabled = false;
+    if (label) label.textContent = 'Buscar Google (sin img)';
+  } else if (job.status === 'error') {
+    el.textContent = `Error Google: ${job.error || 'falló'}`;
+    el.classList.add('text-error');
+    if (btn && state.imagenes.apifyConfigured) btn.disabled = false;
+    if (label) label.textContent = 'Buscar Google (sin img)';
+  }
+}
+
+async function startBusquedaGoogleMasiva() {
+  if (!state.imagenes.apifyConfigured) {
+    showToast('Falta APIFY_TOKEN en backend/.env');
+    return;
+  }
+  if (!window.confirm('¿Buscar en Google Images (Apify) una foto para cada producto SIN imagen y aplicarla automáticamente?')) {
+    return;
+  }
+  try {
+    const started = await api.productoImagenes.buscarGoogle({
+      soloSinImagen: true,
+      maxPorProducto: 5,
+      aplicarPrimera: true,
+      q: state.imagenes.q || '',
+    });
+    if (started.status === 'idle') {
+      showToast(started.message || 'Nada que buscar');
+      return;
+    }
+    showToast('Búsqueda Google iniciada…');
+    updateGoogleJobUi({ status: 'running', totales: started.totales || {} });
+
+    const poll = async () => {
+      const job = await api.productoImagenes.buscarGoogleJob();
+      state.imagenes.googleJob = job;
+      updateGoogleJobUi(job);
+      if (job.status === 'running') {
+        setTimeout(poll, 2000);
+        return;
+      }
+      if (job.status === 'done') {
+        showToast(
+          `Google: ${job.totales?.aplicadas || 0} fotos aplicadas de ${job.totales?.productos || 0}`
+        );
+        await loadImagenesProductos();
+      } else if (job.status === 'error') {
+        showToast(job.error || 'Falló búsqueda Google');
+      }
+    };
+    setTimeout(poll, 1500);
+  } catch (err) {
+    showToast(err.message || 'No se pudo iniciar Google');
+    updateGoogleJobUi({ status: 'idle' });
+  }
+}
+
+function renderImagenesView() {
+  document.body.classList.remove('inv-lock-scroll');
+  app.innerHTML = `
+  <main class="flex-1 flex flex-col relative w-full min-h-0 bg-surface pt-4 pt-safe pb-20">
+    <div class="shrink-0 px-gutter pb-space-sm flex flex-col gap-2">
+      <div class="flex items-start gap-2">
+        <span class="material-symbols-outlined text-[22px] text-primary mt-0.5">add_photo_alternate</span>
+        <div class="min-w-0">
+          <h1 class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight">Carga de img</h1>
+          <p class="font-label-sm text-label-sm text-on-surface-variant"><b>Subir</b> · <b>IA</b> · <b>Google</b> busca fotos masivas con Apify</p>
+        </div>
+      </div>
+      <div class="bg-surface-container rounded-xl p-2.5 shadow-sm flex flex-col gap-2">
+        <div class="flex items-center gap-1.5 bg-surface-container-lowest rounded-lg p-1">
+          <span class="material-symbols-outlined text-[20px] text-on-surface-variant ml-1">search</span>
+          <input id="imagenesSearch" class="flex-1 bg-transparent font-body-md text-body-md text-on-surface px-1 h-9 focus:outline-none min-w-0" placeholder="Buscar código o descripción..." type="search" value="${escapeHtml(state.imagenes.q)}" />
+        </div>
+        <button type="button" id="imagenesGoogleBtn" class="h-10 w-full rounded-lg bg-surface-container-high text-on-surface border border-outline-variant font-label-md text-label-md font-bold inline-flex items-center justify-center gap-1.5">
+          <span class="material-symbols-outlined text-[18px]">travel_explore</span>
+          <span id="imagenesGoogleBtnLabel">Buscar Google (sin img)</span>
+        </button>
+        <p id="imagenesGoogleJob" class="hidden font-label-sm text-[11px] text-on-surface-variant px-0.5"></p>
+        <p id="imagenesBflHint" class="font-label-sm text-[11px] text-on-surface-variant px-0.5">Comprobando Black Forest Labs…</p>
+        <div class="grid grid-cols-3 gap-1.5 text-center">
+          <div class="rounded-lg bg-surface-container-lowest px-1.5 py-1.5">
+            <p class="font-label-sm text-[10px] text-on-surface-variant uppercase font-bold">Códigos</p>
+            <p id="imgTotalCodigos" class="font-code-md text-code-md font-black tabular-nums">${state.imagenes.totales.codigos || 0}</p>
+          </div>
+          <div class="rounded-lg bg-surface-container-lowest px-1.5 py-1.5">
+            <p class="font-label-sm text-[10px] text-on-surface-variant uppercase font-bold">Con img</p>
+            <p id="imgTotalCon" class="font-code-md text-code-md font-black tabular-nums text-primary">${state.imagenes.totales.conImagen || 0}</p>
+          </div>
+          <div class="rounded-lg bg-surface-container-lowest px-1.5 py-1.5">
+            <p class="font-label-sm text-[10px] text-on-surface-variant uppercase font-bold">Sin img</p>
+            <p id="imgTotalSin" class="font-code-md text-code-md font-black tabular-nums">${state.imagenes.totales.sinImagen || 0}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="imagenesList" class="flex-1 min-h-0 overflow-y-auto"></div>
+    ${toastHtml()}
+  </main>
+  <div id="enhancePreviewModal" class="hidden fixed inset-0 z-[85] items-end sm:items-center justify-center bg-on-surface/40 backdrop-blur-[2px] p-gutter">
+    <div class="w-full max-w-lg max-h-[90vh] bg-surface-container-lowest rounded-xl shadow-xl flex flex-col overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="enhancePreviewTitle">
+      <div class="shrink-0 px-space-md pt-space-md pb-2 flex items-start gap-2">
+        <div class="min-w-0 flex-1">
+          <h2 id="enhancePreviewTitle" class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight">¿Usar la mejora IA?</h2>
+          <p id="enhancePreviewMethod" class="font-label-sm text-[11px] text-on-surface-variant mt-0.5"></p>
+        </div>
+        <button type="button" id="enhancePreviewCloseBtn" class="w-8 h-8 rounded-full text-on-surface-variant hover:bg-surface-container flex items-center justify-center shrink-0" aria-label="Cerrar">
+          <span class="material-symbols-outlined text-[20px]">close</span>
+        </button>
+      </div>
+      <div class="px-space-md pb-space-md overflow-y-auto flex flex-col gap-3">
+        <div class="grid grid-cols-2 gap-2">
+          <div class="flex flex-col gap-1">
+            <p class="font-label-sm text-[10px] uppercase font-bold text-on-surface-variant text-center">Original</p>
+            <div class="aspect-square rounded-lg overflow-hidden bg-surface-container border border-outline-variant">
+              <img id="enhancePreviewOriginal" alt="Original" class="w-full h-full object-contain bg-white" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+            </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <p class="font-label-sm text-[10px] uppercase font-bold text-primary text-center">IA</p>
+            <div class="aspect-square rounded-lg overflow-hidden bg-surface-container border border-primary/40">
+              <img id="enhancePreviewAi" alt="Mejorada con IA" class="w-full h-full object-contain bg-white" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+            </div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button" id="enhancePreviewDiscardBtn" class="h-11 rounded-lg bg-surface-container-high text-on-surface border border-outline-variant font-label-md text-label-md font-bold inline-flex items-center justify-center gap-1">
+            Mantener original
+          </button>
+          <button type="button" id="enhancePreviewAcceptBtn" class="h-11 rounded-lg bg-primary text-on-primary font-label-md text-label-md font-bold inline-flex items-center justify-center gap-1">
+            Usar IA
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  ${navHtml()}
+  `;
+
+  let timer = null;
+  document.getElementById('imagenesSearch')?.addEventListener('input', (e) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      state.imagenes.q = String(e.target.value || '').trim();
+      loadImagenesProductos();
+    }, 250);
+  });
+
+  document.getElementById('enhancePreviewAcceptBtn')?.addEventListener('click', () => {
+    acceptEnhancePreview();
+  });
+  document.getElementById('enhancePreviewDiscardBtn')?.addEventListener('click', async () => {
+    await closeEnhancePreviewModal({ discard: true });
+    showToast('Se mantuvo la original');
+  });
+  document.getElementById('enhancePreviewCloseBtn')?.addEventListener('click', async () => {
+    await closeEnhancePreviewModal({ discard: true });
+    showToast('Se mantuvo la original');
+  });
+  document.getElementById('enhancePreviewModal')?.addEventListener('click', async (e) => {
+    if (e.target.id === 'enhancePreviewModal') {
+      await closeEnhancePreviewModal({ discard: true });
+      showToast('Se mantuvo la original');
+    }
+  });
+
+  document.getElementById('imagenesGoogleBtn')?.addEventListener('click', () => {
+    startBusquedaGoogleMasiva();
+  });
+
+  api.productoImagenes
+    .status()
+    .then((s) => {
+      state.imagenes.bflConfigured = Boolean(s?.bflConfigured);
+      state.imagenes.apifyConfigured = Boolean(s?.apifyConfigured);
+      const hint = document.getElementById('imagenesBflHint');
+      if (hint) {
+        const bfl = state.imagenes.bflConfigured
+          ? 'BFL listo'
+          : 'Falta BFL_API_KEY';
+        const apify = state.imagenes.apifyConfigured
+          ? 'Apify listo (Google masivo)'
+          : 'Falta APIFY_TOKEN (Google)';
+        hint.textContent = `${bfl} · ${apify}`;
+        hint.classList.toggle(
+          'text-error',
+          !state.imagenes.bflConfigured || !state.imagenes.apifyConfigured
+        );
+      }
+      const gBtn = document.getElementById('imagenesGoogleBtn');
+      if (gBtn && !state.imagenes.apifyConfigured) {
+        gBtn.disabled = true;
+        gBtn.classList.add('opacity-60');
+      }
+    })
+    .catch(() => {
+      const hint = document.getElementById('imagenesBflHint');
+      if (hint) {
+        hint.textContent = 'No se pudo verificar BFL / Apify';
+        hint.classList.add('text-error');
+      }
+    });
+
+  loadImagenesProductos().then(() => {
+    if (state.imagenes.enhancePreview?.previewUrl) {
+      openEnhancePreviewModal(state.imagenes.enhancePreview);
+      return;
+    }
+    const pending = state.imagenes.items.find((i) => i.tienePreview && i.previewUrl);
+    if (pending) {
+      openEnhancePreviewModal({
+        codigo: pending.codigo,
+        originalUrl: pending.imagenUrl,
+        previewUrl: pending.previewUrl,
+        enhanceMethod: null,
+      });
+    }
+  });
+}
 
 async function renderApp() {
   const next = currentHashView();
@@ -2137,9 +2644,12 @@ async function renderApp() {
 
   if (leavingTriage) await stopScanner();
   document.removeEventListener('click', onDocumentClickCloseMenus);
+  document.body.classList.remove('inv-lock-scroll');
 
   if (state.view === 'inventario') {
     renderInventarioView();
+  } else if (state.view === 'imagenes') {
+    renderImagenesView();
   } else {
     renderTriageView();
   }
