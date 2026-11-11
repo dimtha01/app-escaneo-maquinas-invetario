@@ -1341,10 +1341,11 @@ function inventarioCodigoKey(item) {
   return String(item.Articulo || item.CodigoBarra || item.codigo_escaneado || '—').trim();
 }
 
-function productoImagenUrl(codigo) {
+function productoImagenUrl(codigo, { thumb = false } = {}) {
   const c = String(codigo || '').trim();
   if (!c || c === '—') return null;
-  return `/api/producto-imagenes/${encodeURIComponent(c)}/file`;
+  const kind = thumb ? 'thumb' : 'file';
+  return `/api/producto-imagenes/${encodeURIComponent(c)}/${kind}`;
 }
 
 function imagenLightboxHtml() {
@@ -1580,9 +1581,6 @@ function renderInventarioConsolidado(list) {
         <td class="px-1.5 py-2 align-middle text-right whitespace-nowrap">
           <span class="font-code-sm text-code-sm font-bold text-primary tabular-nums">${escapeHtml(totalTxt)}</span>
         </td>
-        <td class="px-1.5 py-2 align-middle whitespace-nowrap">
-          <span class="font-code-sm text-code-sm font-bold text-on-surface">${escapeHtml(g.sku)}</span>
-        </td>
         <td class="px-1 py-2 align-middle text-center">
           <span class="material-symbols-outlined text-[18px] text-on-surface-variant">chevron_right</span>
         </td>
@@ -1602,7 +1600,7 @@ function renderInventarioConsolidado(list) {
     </div>
     <div id="inventarioTableWrap" class="flex-1 min-h-0 m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden flex flex-col">
       <div class="inv-table-scroll m-0 p-0" id="inventarioTableScroll">
-        <table class="w-full min-w-[860px] border-collapse text-left m-0" id="inventarioDataTable">
+        <table class="w-full min-w-[720px] border-collapse text-left m-0" id="inventarioDataTable">
           <thead>
             <tr class="bg-surface-container">
               <th class="inv-sticky-n px-0.5 py-1.5 border-r border-surface-container-high text-center">${sortHeaderLabel('N°', 'n')}</th>
@@ -1611,7 +1609,6 @@ function renderInventarioConsolidado(list) {
               <th class="px-0.5 py-1.5 text-center">${sortHeaderLabel('Cant.', 'cant')}</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap text-right">Costo/u</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap text-right">Costo total</th>
-              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide leading-tight">Código de barra</th>
               <th class="px-1 py-1.5 w-8"></th>
             </tr>
           </thead>
@@ -1652,17 +1649,13 @@ function renderInventarioDetalleCodigo(list) {
   const codigo = state.inventario.detalleCodigo;
   const items = state.inventario.items.filter((it) => inventarioCodigoKey(it) === codigo);
   const desc = items[0]?.ITEMDESC || '—';
-  const costoTotal = items.reduce((sum, it) => sum + itemCurrCost(it), 0);
-  const costoTotalTxt = formatCosto(costoTotal);
 
   const rows = items
     .map((item) => {
       const sku = item.CodigoBarra || item.codigo_escaneado || '—';
       const tienda = item.sucursal_codigo || item.sucursal_nombre || '—';
       const estatus = item.estatus_nombre || '—';
-      const unit = itemCurrCost(item);
-      const unitTxt = formatCosto(unit);
-      const totalTxt = formatCosto(unit); // cada escaneo = 1 unidad
+      const unitTxt = formatCosto(itemCurrCost(item));
       return `
       <tr class="border-b border-surface-container-low hover:bg-surface-container-low/80" data-devolucion-id="${escapeHtml(item.id)}">
         <td class="inv-sticky-sku px-1.5 py-1.5 align-middle border-r border-surface-container-high whitespace-nowrap">
@@ -1673,9 +1666,6 @@ function renderInventarioDetalleCodigo(list) {
         </td>
         <td class="px-1.5 py-1.5 align-middle whitespace-nowrap text-right">
           <span class="font-code-sm text-code-sm font-bold text-on-surface tabular-nums">${escapeHtml(unitTxt)}</span>
-        </td>
-        <td class="px-1.5 py-1.5 align-middle whitespace-nowrap text-right">
-          <span class="font-code-sm text-code-sm font-bold text-primary tabular-nums">${escapeHtml(totalTxt)}</span>
         </td>
         <td class="px-1.5 py-1.5 align-middle whitespace-nowrap">
           <span class="inline-flex items-center rounded-md bg-primary-fixed text-on-primary-fixed px-1.5 py-0.5 font-code-sm text-code-sm font-bold">${escapeHtml(tienda)}</span>
@@ -1688,7 +1678,8 @@ function renderInventarioDetalleCodigo(list) {
     .join('');
 
   const registrosLabel = `${items.length} registro${items.length === 1 ? '' : 's'}`;
-  const imgUrl = productoImagenUrl(codigo);
+  const imgThumbUrl = productoImagenUrl(codigo, { thumb: true });
+  const imgFullUrl = productoImagenUrl(codigo);
 
   list.innerHTML = `
     <div class="shrink-0 px-gutter pb-3 flex flex-col gap-2">
@@ -1701,11 +1692,11 @@ function renderInventarioDetalleCodigo(list) {
         <span class="font-label-sm text-label-sm text-on-surface-variant font-semibold truncate">Detalle</span>
       </nav>
       <div class="rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2.5 flex items-start gap-3">
-        <button type="button" id="invDetalleImgBtn" class="shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-outline-variant bg-surface-container-high flex items-center justify-center disabled:opacity-60" ${imgUrl ? '' : 'disabled'} aria-label="Ver imagen completa" title="${imgUrl ? 'Ver imagen completa' : 'Sin imagen'}">
+        <button type="button" id="invDetalleImgBtn" class="shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-outline-variant bg-surface-container-high flex items-center justify-center disabled:opacity-60" ${imgThumbUrl ? '' : 'disabled'} aria-label="Ver imagen completa" title="${imgThumbUrl ? 'Ver imagen completa' : 'Sin imagen'}">
           <span id="invDetalleImgPlaceholder" class="material-symbols-outlined text-[28px] text-on-surface-variant">image</span>
           ${
-            imgUrl
-              ? `<img id="invDetalleImg" alt="${escapeHtml(codigo)}" class="hidden w-full h-full object-cover" decoding="async" />`
+            imgThumbUrl
+              ? `<img id="invDetalleImg" alt="${escapeHtml(codigo)}" class="hidden w-full h-full object-cover" decoding="async" fetchpriority="high" />`
               : ''
           }
         </button>
@@ -1714,34 +1705,27 @@ function renderInventarioDetalleCodigo(list) {
           <h2 id="invDetalleTitulo" class="font-code-md text-[18px] leading-6 font-black text-on-surface tracking-tight">${escapeHtml(codigo)}</h2>
           <p class="mt-1 font-label-md text-label-md text-on-surface font-medium leading-snug">${escapeHtml(desc)}</p>
         </div>
-        <div class="shrink-0 text-right flex flex-col gap-2">
-          <div>
-            <p class="font-label-sm text-label-sm text-on-surface-variant font-semibold uppercase tracking-wide mb-0.5">Cant.</p>
-            <p class="font-code-md text-[18px] leading-6 font-black text-on-surface tabular-nums">${items.length}</p>
-            <p class="mt-0.5 font-label-sm text-label-sm text-on-surface-variant">${registrosLabel}</p>
-          </div>
-          <div>
-            <p class="font-label-sm text-label-sm text-on-surface-variant font-semibold uppercase tracking-wide mb-0.5">Costo total</p>
-            <p id="invDetalleCostoTotal" class="font-code-md text-[18px] leading-6 font-black text-primary tabular-nums">${escapeHtml(costoTotalTxt)}</p>
-          </div>
+        <div class="shrink-0 text-right">
+          <p class="font-label-sm text-label-sm text-on-surface-variant font-semibold uppercase tracking-wide mb-0.5">Cant.</p>
+          <p class="font-code-md text-[18px] leading-6 font-black text-on-surface tabular-nums">${items.length}</p>
+          <p class="mt-0.5 font-label-sm text-label-sm text-on-surface-variant">${registrosLabel}</p>
         </div>
       </div>
     </div>
     <div id="inventarioTableWrap" class="flex-1 min-h-0 m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden flex flex-col">
       <div class="inv-table-scroll m-0 p-0" id="inventarioTableScroll">
-        <table class="w-full min-w-[720px] border-collapse text-left m-0" id="inventarioDataTable">
+        <table class="w-full min-w-[640px] border-collapse text-left m-0" id="inventarioDataTable">
           <thead>
             <tr class="bg-surface-container">
               <th class="inv-sticky-sku px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high leading-tight">Código de barra</th>
               <th class="px-1 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide text-center whitespace-nowrap">Cant.</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap text-right">Costo/u</th>
-              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap text-right">Costo total</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Tienda</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Estatus</th>
             </tr>
           </thead>
           <tbody class="bg-surface-container-lowest">
-            ${rows || `<tr><td colspan="6" class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">Sin registros</td></tr>`}
+            ${rows || `<tr><td colspan="5" class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">Sin registros</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -1754,7 +1738,7 @@ function renderInventarioDetalleCodigo(list) {
   const detalleImg = document.getElementById('invDetalleImg');
   const detalleImgBtn = document.getElementById('invDetalleImgBtn');
   const detallePlaceholder = document.getElementById('invDetalleImgPlaceholder');
-  if (detalleImg && detalleImgBtn && imgUrl) {
+  if (detalleImg && detalleImgBtn && imgThumbUrl) {
     const showDetalleImg = (ok) => {
       if (ok) {
         detalleImg.classList.remove('hidden');
@@ -1770,10 +1754,10 @@ function renderInventarioDetalleCodigo(list) {
     detalleImg.addEventListener('error', () => showDetalleImg(false));
     detalleImgBtn.addEventListener('click', () => {
       if (detalleImgBtn.disabled) return;
-      openImagenLightbox(imgUrl, codigo);
+      openImagenLightbox(imgFullUrl, codigo);
     });
-    // Asigna src después de los listeners para no perder el evento load
-    detalleImg.src = imgUrl;
+    // Thumb pequeño para card; full solo al abrir lightbox
+    detalleImg.src = imgThumbUrl;
   }
 }
 

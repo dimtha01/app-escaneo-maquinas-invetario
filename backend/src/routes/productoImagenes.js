@@ -13,7 +13,9 @@ import {
 import {
   ALLOWED_IMAGE_MIME,
   WEBP_MIME,
+  ensureProductoImagenThumb,
   ensureProductoImagenWebp,
+  thumbFilenameForCodigo,
   webpFilenameForCodigo,
 } from '../services/imageWebp.js';
 
@@ -385,7 +387,7 @@ router.get('/:codigo/file', (req, res) => {
   const db = getDb();
   const codigo = String(req.params.codigo || '').trim();
   const row = db
-    .prepare(`SELECT filename, mime FROM producto_imagenes WHERE codigo = ?`)
+    .prepare(`SELECT filename, mime, actualizado_en FROM producto_imagenes WHERE codigo = ?`)
     .get(codigo);
   if (!row) {
     return res.status(404).json({ error: 'Sin imagen para este código' });
@@ -394,9 +396,43 @@ router.get('/:codigo/file', (req, res) => {
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Archivo de imagen no encontrado' });
   }
-  res.setHeader('Content-Type', row.mime || 'image/jpeg');
-  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.setHeader('Content-Type', row.mime || WEBP_MIME);
+  res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+  if (row.actualizado_en) {
+    res.setHeader('ETag', `"${encodeURIComponent(String(row.actualizado_en))}"`);
+  }
   res.sendFile(filePath);
+});
+
+/** Miniatura WebP (~160px) para carga rápida en cards. */
+router.get('/:codigo/thumb', async (req, res) => {
+  const db = getDb();
+  const codigo = String(req.params.codigo || '').trim();
+  const row = db
+    .prepare(`SELECT filename, actualizado_en FROM producto_imagenes WHERE codigo = ?`)
+    .get(codigo);
+  if (!row) {
+    return res.status(404).json({ error: 'Sin imagen para este código' });
+  }
+  const filePath = path.join(imagenesDir, row.filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Archivo de imagen no encontrado' });
+  }
+  try {
+    const thumb = await ensureProductoImagenThumb({
+      codigo,
+      srcPath: filePath,
+      destDir: imagenesDir,
+    });
+    res.setHeader('Content-Type', WEBP_MIME);
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    if (row.actualizado_en) {
+      res.setHeader('ETag', `"thumb-${encodeURIComponent(String(row.actualizado_en))}"`);
+    }
+    res.sendFile(thumb.path);
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'No se pudo generar thumb' });
+  }
 });
 
 /** Sirve la preview IA pendiente de aceptar (no reemplaza la original). */
@@ -652,8 +688,14 @@ router.delete('/:codigo', (req, res) => {
     return res.status(404).json({ error: 'Sin imagen para este código' });
   }
   const filePath = path.join(imagenesDir, row.filename);
+  const thumbPath = path.join(imagenesDir, thumbFilenameForCodigo(codigo));
   try {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
   } catch {
     /* ignore */
   }

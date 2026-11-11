@@ -53,6 +53,47 @@ export function webpFilenameForCodigo(codigo) {
   return `${safe}${WEBP_EXT}`;
 }
 
+export function thumbFilenameForCodigo(codigo) {
+  const safe = String(codigo || '')
+    .trim()
+    .replace(/[^\w.-]+/g, '_');
+  return `${safe}.thumb.webp`;
+}
+
+/**
+ * Genera (o reutiliza) un thumb WebP pequeño para carga rápida en UI.
+ * @returns {Promise<{ path: string, mime: string, bytes: number, cached: boolean }>}
+ */
+export async function ensureProductoImagenThumb({
+  codigo,
+  srcPath,
+  destDir,
+  size = 160,
+  quality = 70,
+}) {
+  const thumbName = thumbFilenameForCodigo(codigo);
+  const thumbPath = path.join(destDir, thumbName);
+  if (fs.existsSync(thumbPath)) {
+    const srcStat = fs.statSync(srcPath);
+    const thumbStat = fs.statSync(thumbPath);
+    if (thumbStat.mtimeMs >= srcStat.mtimeMs && thumbStat.size > 0) {
+      return {
+        path: thumbPath,
+        mime: WEBP_MIME,
+        bytes: thumbStat.size,
+        cached: true,
+      };
+    }
+  }
+  const buf = await sharp(srcPath, { animated: false, failOn: 'none' })
+    .rotate()
+    .resize(size, size, { fit: 'cover', withoutEnlargement: true })
+    .webp({ quality, effort: 4 })
+    .toBuffer();
+  fs.writeFileSync(thumbPath, buf);
+  return { path: thumbPath, mime: WEBP_MIME, bytes: buf.length, cached: false };
+}
+
 export function isAlreadyWebp(filename, mime) {
   const name = String(filename || '').toLowerCase();
   const m = String(mime || '').toLowerCase();
