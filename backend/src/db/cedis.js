@@ -16,7 +16,7 @@ function buildConfig() {
       enableArithAbort: true,
     },
     connectionTimeout: 8000,
-    requestTimeout: 12000,
+    requestTimeout: 20000,
     pool: {
       max: 5,
       min: 0,
@@ -66,40 +66,71 @@ export async function pingCedis() {
   }
 }
 
-/**
- * Busca artículo por Articulo o CodigoBarra (query CEDIS).
- * @returns {Promise<null | { Articulo, CodigoBarra, ITEMDESC, Cantidad, UdM }>}
- */
-export async function buscarProductoCedis(serial) {
-  const codigo = String(serial ?? '').trim();
-  if (!codigo) return null;
-
-  const pool = await getCedisPool();
-  const result = await pool
-    .request()
-    .input('serial', sql.VarChar(500), codigo)
-    .query(`
-      SELECT TOP 1
-        S.[Articulo],
-        S.[CodigoBarra],
-        RTRIM(I.[ITEMDESC]) AS ITEMDESC,
-        S.[Cantidad],
-        S.[UdM]
-      FROM [dbo].[MTX_IVTrx_seriales_IPV] S
-      INNER JOIN [dbo].[iv00101] I
-        ON S.[Articulo] = I.[itemnmbr]
-      WHERE S.[Articulo] = RTRIM(@serial)
-         OR S.[CodigoBarra] = RTRIM(@serial)
-    `);
-
-  const row = result.recordset?.[0];
+function mapProductoRow(row) {
   if (!row) return null;
-
   return {
     Articulo: String(row.Articulo ?? '').trim(),
     CodigoBarra: String(row.CodigoBarra ?? '').trim(),
     ITEMDESC: String(row.ITEMDESC ?? '').trim(),
     Cantidad: Number(row.Cantidad ?? 1),
     UdM: String(row.UdM ?? 'UND').trim() || 'UND',
+    /** Costo unitario (CURRCOST de CORP) */
+    CurrCost: Number(row.CURRCOST ?? row.CurrCost ?? 0),
   };
+}
+
+/**
+ * Busca artículo/serial en CORP vía linked server (costo unitario CURRCOST).
+ * Query oficial:
+ *   MTX_IVTrx_seriales_IPV ⋈ iv00101  WHERE Articulo|CodigoBarra = @serial
+ */
+async function queryCorpBySerial(pool, serial) {
+  const result = await pool
+    .request()
+    .input('serial', sql.VarChar(500), serial)
+    .query(`
+      SELECT TOP 1
+        S.[Articulo],
+        S.[CodigoBarra],
+        RTRIM(I.[ITEMDESC]) AS ITEMDESC,
+        S.[Cantidad],
+        S.[UdM],
+        I.[CURRCOST] AS CURRCOST
+      FROM [DYNAMICS\\GPSP2].[CORP].[dbo].[MTX_IVTrx_seriales_IPV] S
+      INNER JOIN [DYNAMICS\\GPSP2].[CORP].[dbo].[iv00101] I
+        ON S.[Articulo] = I.[itemnmbr]
+      WHERE S.[Articulo] = RTRIM(@serial)
+         OR S.[CodigoBarra] = RTRIM(@serial)
+      ORDER BY
+        CASE
+          WHEN S.[CodigoBarra] = RTRIM(@serial) THEN 0
+          WHEN S.[Articulo] = RTRIM(@serial) THEN 1
+          ELSE 2
+        END
+    `);
+  return mapProductoRow(result.recordset?.[0]);
+}
+
+/**
+ * Busca artículo por Articulo o CodigoBarra en CORP (linked).
+ * Fallback: quita ceros a la izquierda del serial (a veces la barra no lleva el 0).
+ * @returns {Promise<null | { Articulo, CodigoBarra, ITEMDESC, Cantidad, UdM, CurrCost }>}
+ */
+export async function buscarProductoCedis(serial) {
+  const codigo = String(serial ?? '').trim();
+  if (!codigo) return null;
+
+  const pool = await getCedisPool();
+  let row = await queryCorpBySerial(pool, codigo);
+  let matchMode = row ? 'exact' : null;
+
+  if (!row) {
+    const sinCeros = codigo.replace(/^0+/, '');
+    if (sinCeros && sinCeros !== codigo) {
+      row = await queryCorpBySerial(pool, sinCeros);
+      if (row) matchMode = 'strip-leading-zeros';
+    }
+  }
+
+  return row;
 }

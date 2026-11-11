@@ -139,9 +139,10 @@ export async function buildInventarioWorkbook(items, _meta = {}) {
     { key: 'estatus', width: 28 },
     { key: 'cantidad', width: 12 },
     { key: 'udm', width: 8 },
+    { key: 'currcost', width: 14 },
   ];
 
-  styleTitleBanner(sheet, 'A1:H1', 'REPORTE DE INVENTARIO');
+  styleTitleBanner(sheet, 'A1:I1', 'REPORTE DE INVENTARIO');
   sheet.getRow(2).height = 6;
 
   const header = sheet.getRow(3);
@@ -154,6 +155,7 @@ export async function buildInventarioWorkbook(items, _meta = {}) {
     'Estatus',
     'Cantidad',
     'UdM',
+    'Costo/u',
   ];
   styleHeaderRow(header);
 
@@ -163,6 +165,7 @@ export async function buildInventarioWorkbook(items, _meta = {}) {
     const tienda = item.sucursal_codigo
       ? `${item.sucursal_codigo}${item.sucursal_nombre ? ` - ${item.sucursal_nombre}` : ''}`
       : item.sucursal_nombre || '—';
+    const costo = Number(item.CurrCost ?? item.currcost ?? 0);
     row.values = [
       item.orden ?? i + 1,
       item.Articulo || '—',
@@ -172,6 +175,7 @@ export async function buildInventarioWorkbook(items, _meta = {}) {
       item.estatus_nombre || '—',
       1,
       item.UdM || 'UND',
+      Number.isFinite(costo) ? costo : 0,
     ];
     styleDataRow(row, i % 2 === 1);
     row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
@@ -180,20 +184,22 @@ export async function buildInventarioWorkbook(items, _meta = {}) {
     row.getCell(6).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
     row.getCell(7).alignment = { horizontal: 'center', vertical: 'middle' };
     row.getCell(8).alignment = { horizontal: 'center', vertical: 'middle' };
+    row.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
+    row.getCell(9).numFmt = '#,##0.00';
     rowIdx += 1;
   });
 
   if (!items.length) {
     const empty = sheet.getRow(rowIdx);
     empty.getCell(1).value = 'Sin registros para los filtros actuales.';
-    sheet.mergeCells(`A${rowIdx}:H${rowIdx}`);
+    sheet.mergeCells(`A${rowIdx}:I${rowIdx}`);
     empty.getCell(1).font = SUB_FONT;
   }
 
   if (items.length) {
     sheet.autoFilter = {
       from: { row: 3, column: 1 },
-      to: { row: 3 + items.length, column: 8 },
+      to: { row: 3 + items.length, column: 9 },
     };
   }
 

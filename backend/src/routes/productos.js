@@ -12,11 +12,20 @@ function normalizePayload(body = {}) {
   const itemdesc = String(body.ITEMDESC ?? body.itemdesc ?? body.nombre ?? '').trim();
   const cantidad = Number(body.Cantidad ?? body.cantidad ?? 1);
   const udm = String(body.UdM ?? body.udm ?? 'UND').trim() || 'UND';
-  return { articulo, codigoBarra, itemdesc, cantidad, udm };
+  const currcost = Number(body.CurrCost ?? body.currcost ?? 0);
+  return {
+    articulo,
+    codigoBarra,
+    itemdesc,
+    cantidad,
+    udm,
+    currcost: Number.isFinite(currcost) ? currcost : 0,
+  };
 }
 
 function upsertProductoLocal(cedis) {
   const db = getDb();
+  const costo = Number(cedis.CurrCost ?? 0);
   const existing = db
     .prepare(
       `SELECT * FROM productos
@@ -33,6 +42,7 @@ function upsertProductoLocal(cedis) {
            itemdesc = ?,
            cantidad = ?,
            udm = ?,
+           currcost = ?,
            actualizado_en = datetime('now')
        WHERE id = ?`
     ).run(
@@ -41,6 +51,7 @@ function upsertProductoLocal(cedis) {
       cedis.ITEMDESC,
       cedis.Cantidad,
       cedis.UdM,
+      Number.isFinite(costo) ? costo : 0,
       existing.id
     );
     return db.prepare('SELECT * FROM productos WHERE id = ?').get(existing.id);
@@ -48,15 +59,16 @@ function upsertProductoLocal(cedis) {
 
   const result = db
     .prepare(
-      `INSERT INTO productos (articulo, codigo_barra, itemdesc, cantidad, udm)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO productos (articulo, codigo_barra, itemdesc, cantidad, udm, currcost)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
     .run(
       cedis.Articulo,
       cedis.CodigoBarra,
       cedis.ITEMDESC,
       cedis.Cantidad,
-      cedis.UdM
+      cedis.UdM,
+      Number.isFinite(costo) ? costo : 0
     );
 
   return db.prepare('SELECT * FROM productos WHERE id = ?').get(result.lastInsertRowid);
@@ -113,7 +125,8 @@ router.get('/buscar/:codigo', async (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { articulo, codigoBarra, itemdesc, cantidad, udm } = normalizePayload(req.body);
+  const { articulo, codigoBarra, itemdesc, cantidad, udm, currcost } =
+    normalizePayload(req.body);
 
   if (!articulo || !codigoBarra || !itemdesc) {
     return res.status(400).json({
@@ -124,15 +137,16 @@ router.post('/', (req, res) => {
   try {
     const result = getDb()
       .prepare(
-        `INSERT INTO productos (articulo, codigo_barra, itemdesc, cantidad, udm)
-         VALUES (?, ?, ?, ?, ?)`
+        `INSERT INTO productos (articulo, codigo_barra, itemdesc, cantidad, udm, currcost)
+         VALUES (?, ?, ?, ?, ?, ?)`
       )
       .run(
         articulo,
         codigoBarra,
         itemdesc,
         Number.isFinite(cantidad) ? cantidad : 1,
-        udm
+        udm,
+        Number.isFinite(currcost) ? currcost : 0
       );
 
     const row = getDb()

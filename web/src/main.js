@@ -2,6 +2,16 @@ import './style.css';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { api } from './api.js';
 
+/** Costo unitario CORP (CURRCOST, USD) → número sin símbolo */
+function formatCosto(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  return n.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 /** Formatos de código de barras retail → lectura más rápida */
 const BARCODE_FORMATS = [
   Html5QrcodeSupportedFormats.EAN_13,
@@ -355,6 +365,7 @@ function renderHistorial() {
       const tienda = item.sucursal_codigo || item.sucursal_nombre || '—';
       const estatus = item.estatus_nombre || '—';
       const n = item.orden ?? '—';
+      const costo = formatCosto(item.CurrCost);
       return `
       <tr class="border-b border-surface-container-low hover:bg-surface-container-low/80" data-devolucion-id="${escapeHtml(item.id)}">
         <td class="inv-sticky-n px-1 py-1.5 align-middle text-center border-r border-surface-container-high">
@@ -368,6 +379,9 @@ function renderHistorial() {
         </td>
         <td class="px-1.5 py-1.5 align-middle whitespace-nowrap">
           <span class="font-code-sm text-code-sm font-bold text-on-surface">${escapeHtml(sku)}</span>
+        </td>
+        <td class="px-1.5 py-1.5 align-middle whitespace-nowrap text-right">
+          <span class="font-code-sm text-code-sm font-bold text-primary tabular-nums">${escapeHtml(costo)}</span>
         </td>
         <td class="px-1.5 py-1.5 align-middle whitespace-nowrap">
           <span class="inline-flex items-center rounded-md bg-primary-fixed text-on-primary-fixed px-1.5 py-0.5 font-code-sm text-code-sm font-bold">${escapeHtml(tienda)}</span>
@@ -392,13 +406,14 @@ function renderHistorial() {
   list.innerHTML = `
     <div id="historialTableWrap" class="m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden">
       <div class="overflow-x-auto overscroll-x-contain touch-pan-x m-0 p-0" id="historialTableScroll">
-        <table class="w-full min-w-[700px] border-collapse text-left m-0" id="historialDataTable">
+        <table class="w-full min-w-[780px] border-collapse text-left m-0" id="historialDataTable">
           <thead>
             <tr class="bg-surface-container">
               <th class="inv-sticky-n px-1 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high text-center">N°</th>
               <th class="inv-sticky-codigo px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high leading-tight">Código de producto</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Descripción</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide leading-tight">Código de barra</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap text-right">Costo/u</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Tienda</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Estatus</th>
               <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold w-16"></th>
@@ -696,6 +711,8 @@ function renderProductoCard() {
     state.producto.Cantidad ?? 1
   );
   document.getElementById('productoUdm').textContent = state.producto.UdM || 'UND';
+  const costEl = document.getElementById('productoCurrCost');
+  if (costEl) costEl.textContent = formatCosto(state.producto.CurrCost);
 }
 
 function pickerHtml({ key, icon = 'list', placeholder = 'Seleccionar', modal = false }) {
@@ -1133,6 +1150,7 @@ async function guardarDevolucion() {
       ITEMDESC: state.producto?.ITEMDESC,
       Cantidad: state.producto?.Cantidad,
       UdM: state.producto?.UdM,
+      CurrCost: state.producto?.CurrCost ?? 0,
     });
 
     showToast(result.mensaje || 'Devolución registrada.');
@@ -1330,6 +1348,64 @@ function inventarioCodigoKey(item) {
   return String(item.Articulo || item.CodigoBarra || item.codigo_escaneado || '—').trim();
 }
 
+function productoImagenUrl(codigo) {
+  const c = String(codigo || '').trim();
+  if (!c || c === '—') return null;
+  return `/api/producto-imagenes/${encodeURIComponent(c)}/file`;
+}
+
+function imagenLightboxHtml() {
+  return `
+    <div id="imagenLightbox" class="hidden fixed inset-0 z-[80] bg-black/80 items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Imagen completa">
+      <button type="button" id="imagenLightboxClose" class="absolute top-3 right-3 h-10 w-10 rounded-full bg-white/15 text-white hover:bg-white/25 inline-flex items-center justify-center" aria-label="Cerrar">
+        <span class="material-symbols-outlined text-[22px]">close</span>
+      </button>
+      <img id="imagenLightboxImg" src="" alt="" class="max-w-full max-h-[90dvh] object-contain rounded-lg shadow-2xl" />
+    </div>`;
+}
+
+function openImagenLightbox(url, alt = '') {
+  const modal = document.getElementById('imagenLightbox');
+  const img = document.getElementById('imagenLightboxImg');
+  if (!modal || !img || !url) return;
+  img.src = url;
+  img.alt = alt || 'Imagen del producto';
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+}
+
+function closeImagenLightbox() {
+  const modal = document.getElementById('imagenLightbox');
+  const img = document.getElementById('imagenLightboxImg');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+  if (img) img.removeAttribute('src');
+}
+
+function bindImagenLightboxEvents() {
+  const modal = document.getElementById('imagenLightbox');
+  if (!modal || modal.dataset.bound === '1') return;
+  modal.dataset.bound = '1';
+  document.getElementById('imagenLightboxClose')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeImagenLightbox();
+  });
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeImagenLightbox();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+      closeImagenLightbox();
+    }
+  });
+}
+
+function itemCurrCost(item) {
+  const n = Number(item?.CurrCost ?? item?.currcost ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function consolidarInventarioPorCodigo(items) {
   const map = new Map();
   for (const item of items) {
@@ -1337,20 +1413,25 @@ function consolidarInventarioPorCodigo(items) {
     const desc = String(item.ITEMDESC || '—').trim();
     const sku = item.CodigoBarra || item.codigo_escaneado || '—';
     const orden = Number(item.orden) || Number(item.id) || 0;
+    const costo = itemCurrCost(item);
     const prev = map.get(codigo);
     if (prev) {
       prev.cantidad += 1;
+      prev.costoTotal += costo;
       prev.items.push(item);
       if (orden > 0 && (prev.primerOrden === 0 || orden < prev.primerOrden)) {
         prev.primerOrden = orden;
       }
       if (prev.descripcion === '—' && desc !== '—') prev.descripcion = desc;
+      if (!(prev.costoUnidad > 0) && costo > 0) prev.costoUnidad = costo;
     } else {
       map.set(codigo, {
         codigo,
         descripcion: desc,
         sku,
         cantidad: 1,
+        costoUnidad: costo,
+        costoTotal: costo,
         primerOrden: orden,
         items: [item],
       });
@@ -1479,22 +1560,32 @@ function renderInventarioConsolidado(list) {
       ? `Cant. ${state.inventario.sortDir === 'asc' ? 'menor→mayor' : 'mayor→menor'}`
       : `N° ${state.inventario.sortDir === 'asc' ? 'primero→último' : 'último→primero'}`;
 
+  const costoGlobal = grupos.reduce((sum, g) => sum + (Number(g.costoTotal) || 0), 0);
+
   const rows = grupos
     .map((g) => {
       const n = g.n;
+      const unitTxt = formatCosto(g.costoUnidad);
+      const totalTxt = formatCosto(g.costoTotal);
       return `
-      <tr class="border-b border-surface-container-low hover:bg-primary-fixed/20 cursor-pointer invCodigoRow" data-codigo="${escapeHtml(g.codigo)}" data-n="${n}" data-cant="${escapeHtml(g.cantidad)}" role="button" tabindex="0">
+      <tr class="border-b border-surface-container-low hover:bg-primary-fixed/20 cursor-pointer invCodigoRow" data-codigo="${escapeHtml(g.codigo)}" data-n="${n}" data-cant="${escapeHtml(g.cantidad)}" data-costo="${escapeHtml(g.costoTotal)}" role="button" tabindex="0">
         <td class="inv-sticky-n px-1 py-2 align-middle text-center border-r border-surface-container-high">
           <span class="font-code-md text-code-md font-black text-on-surface tabular-nums">${n}</span>
         </td>
         <td class="inv-sticky-codigo px-1.5 py-2 align-middle border-r border-surface-container-high">
           <div class="font-code-sm text-code-sm font-bold text-on-surface leading-tight">${escapeHtml(g.codigo)}</div>
         </td>
-        <td class="inv-sticky-cant px-1 py-2 align-middle text-center border-r border-surface-container-high whitespace-nowrap">
+        <td class="px-2 py-2 align-middle min-w-[220px]">
+          <div class="font-label-md text-label-md text-on-surface font-medium leading-snug whitespace-normal break-words">${escapeHtml(g.descripcion)}</div>
+        </td>
+        <td class="px-1 py-2 align-middle text-center whitespace-nowrap">
           <span class="font-code-md text-code-md font-black text-on-surface tabular-nums">${escapeHtml(g.cantidad)}</span>
         </td>
-        <td class="px-2 py-2 align-middle min-w-[260px]">
-          <div class="font-label-md text-label-md text-on-surface font-medium leading-snug whitespace-normal break-words">${escapeHtml(g.descripcion)}</div>
+        <td class="px-1.5 py-2 align-middle text-right whitespace-nowrap">
+          <span class="font-code-sm text-code-sm font-bold text-on-surface tabular-nums">${escapeHtml(unitTxt)}</span>
+        </td>
+        <td class="px-1.5 py-2 align-middle text-right whitespace-nowrap">
+          <span class="font-code-sm text-code-sm font-bold text-primary tabular-nums">${escapeHtml(totalTxt)}</span>
         </td>
         <td class="px-1.5 py-2 align-middle whitespace-nowrap">
           <span class="font-code-sm text-code-sm font-bold text-on-surface">${escapeHtml(g.sku)}</span>
@@ -1518,13 +1609,15 @@ function renderInventarioConsolidado(list) {
     </div>
     <div id="inventarioTableWrap" class="flex-1 min-h-0 m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden flex flex-col">
       <div class="inv-table-scroll m-0 p-0" id="inventarioTableScroll">
-        <table class="w-full min-w-[680px] border-collapse text-left m-0" id="inventarioDataTable">
+        <table class="w-full min-w-[860px] border-collapse text-left m-0" id="inventarioDataTable">
           <thead>
             <tr class="bg-surface-container">
               <th class="inv-sticky-n px-0.5 py-1.5 border-r border-surface-container-high text-center">${sortHeaderLabel('N°', 'n')}</th>
               <th class="inv-sticky-codigo px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high leading-tight">Código de producto</th>
-              <th class="inv-sticky-cant px-0.5 py-1.5 border-r border-surface-container-high text-center">${sortHeaderLabel('Cant.', 'cant')}</th>
               <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Descripción</th>
+              <th class="px-0.5 py-1.5 text-center">${sortHeaderLabel('Cant.', 'cant')}</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap text-right">Costo/u</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap text-right">Costo total</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide leading-tight">Código de barra</th>
               <th class="px-1 py-1.5 w-8"></th>
             </tr>
@@ -1535,6 +1628,12 @@ function renderInventarioConsolidado(list) {
         </table>
       </div>
     </div>`;
+
+  state.inventario.totales = {
+    ...state.inventario.totales,
+    costo: costoGlobal,
+  };
+  renderInventarioTotalesRow();
 
   list.querySelectorAll('.invSortBtn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -1560,19 +1659,30 @@ function renderInventarioDetalleCodigo(list) {
   const codigo = state.inventario.detalleCodigo;
   const items = state.inventario.items.filter((it) => inventarioCodigoKey(it) === codigo);
   const desc = items[0]?.ITEMDESC || '—';
+  const costoTotal = items.reduce((sum, it) => sum + itemCurrCost(it), 0);
+  const costoTotalTxt = formatCosto(costoTotal);
 
   const rows = items
     .map((item) => {
       const sku = item.CodigoBarra || item.codigo_escaneado || '—';
       const tienda = item.sucursal_codigo || item.sucursal_nombre || '—';
       const estatus = item.estatus_nombre || '—';
+      const unit = itemCurrCost(item);
+      const unitTxt = formatCosto(unit);
+      const totalTxt = formatCosto(unit); // cada escaneo = 1 unidad
       return `
       <tr class="border-b border-surface-container-low hover:bg-surface-container-low/80" data-devolucion-id="${escapeHtml(item.id)}">
         <td class="inv-sticky-sku px-1.5 py-1.5 align-middle border-r border-surface-container-high whitespace-nowrap">
           <span class="font-code-sm text-code-sm font-bold text-on-surface">${escapeHtml(sku)}</span>
         </td>
-        <td class="inv-sticky-cant px-1 py-1.5 align-middle text-center border-r border-surface-container-high whitespace-nowrap">
+        <td class="px-1 py-1.5 align-middle text-center whitespace-nowrap">
           <span class="font-code-md text-code-md font-black text-on-surface tabular-nums">1</span>
+        </td>
+        <td class="px-1.5 py-1.5 align-middle whitespace-nowrap text-right">
+          <span class="font-code-sm text-code-sm font-bold text-on-surface tabular-nums">${escapeHtml(unitTxt)}</span>
+        </td>
+        <td class="px-1.5 py-1.5 align-middle whitespace-nowrap text-right">
+          <span class="font-code-sm text-code-sm font-bold text-primary tabular-nums">${escapeHtml(totalTxt)}</span>
         </td>
         <td class="px-1.5 py-1.5 align-middle whitespace-nowrap">
           <span class="inline-flex items-center rounded-md bg-primary-fixed text-on-primary-fixed px-1.5 py-0.5 font-code-sm text-code-sm font-bold">${escapeHtml(tienda)}</span>
@@ -1595,6 +1705,7 @@ function renderInventarioDetalleCodigo(list) {
     .join('');
 
   const registrosLabel = `${items.length} registro${items.length === 1 ? '' : 's'}`;
+  const imgUrl = productoImagenUrl(codigo);
 
   list.innerHTML = `
     <div class="shrink-0 px-gutter pb-3 flex flex-col gap-2">
@@ -1607,32 +1718,48 @@ function renderInventarioDetalleCodigo(list) {
         <span class="font-label-sm text-label-sm text-on-surface-variant font-semibold truncate">Detalle</span>
       </nav>
       <div class="rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2.5 flex items-start gap-3">
+        <button type="button" id="invDetalleImgBtn" class="shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-outline-variant bg-surface-container-high flex items-center justify-center disabled:opacity-60" ${imgUrl ? '' : 'disabled'} aria-label="Ver imagen completa" title="${imgUrl ? 'Ver imagen completa' : 'Sin imagen'}">
+          <span id="invDetalleImgPlaceholder" class="material-symbols-outlined text-[28px] text-on-surface-variant">image</span>
+          ${
+            imgUrl
+              ? `<img id="invDetalleImg" alt="${escapeHtml(codigo)}" class="hidden w-full h-full object-cover" decoding="async" />`
+              : ''
+          }
+        </button>
         <div class="min-w-0 flex-1">
           <p class="font-label-sm text-label-sm text-on-surface-variant font-semibold uppercase tracking-wide mb-0.5">Código de producto</p>
           <h2 id="invDetalleTitulo" class="font-code-md text-[18px] leading-6 font-black text-on-surface tracking-tight">${escapeHtml(codigo)}</h2>
           <p class="mt-1 font-label-md text-label-md text-on-surface font-medium leading-snug">${escapeHtml(desc)}</p>
         </div>
-        <div class="shrink-0 text-right">
-          <p class="font-label-sm text-label-sm text-on-surface-variant font-semibold uppercase tracking-wide mb-0.5">Cant.</p>
-          <p class="font-code-md text-[18px] leading-6 font-black text-on-surface tabular-nums">${items.length}</p>
-          <p class="mt-0.5 font-label-sm text-label-sm text-on-surface-variant">${registrosLabel}</p>
+        <div class="shrink-0 text-right flex flex-col gap-2">
+          <div>
+            <p class="font-label-sm text-label-sm text-on-surface-variant font-semibold uppercase tracking-wide mb-0.5">Cant.</p>
+            <p class="font-code-md text-[18px] leading-6 font-black text-on-surface tabular-nums">${items.length}</p>
+            <p class="mt-0.5 font-label-sm text-label-sm text-on-surface-variant">${registrosLabel}</p>
+          </div>
+          <div>
+            <p class="font-label-sm text-label-sm text-on-surface-variant font-semibold uppercase tracking-wide mb-0.5">Costo total</p>
+            <p id="invDetalleCostoTotal" class="font-code-md text-[18px] leading-6 font-black text-primary tabular-nums">${escapeHtml(costoTotalTxt)}</p>
+          </div>
         </div>
       </div>
     </div>
     <div id="inventarioTableWrap" class="flex-1 min-h-0 m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden flex flex-col">
       <div class="inv-table-scroll m-0 p-0" id="inventarioTableScroll">
-        <table class="w-full min-w-[560px] border-collapse text-left m-0" id="inventarioDataTable">
+        <table class="w-full min-w-[720px] border-collapse text-left m-0" id="inventarioDataTable">
           <thead>
             <tr class="bg-surface-container">
               <th class="inv-sticky-sku px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high leading-tight">Código de barra</th>
-              <th class="inv-sticky-cant px-1 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide text-center border-r border-surface-container-high whitespace-nowrap">Cant.</th>
+              <th class="px-1 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide text-center whitespace-nowrap">Cant.</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap text-right">Costo/u</th>
+              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap text-right">Costo total</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Tienda</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Estatus</th>
               <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold w-16"></th>
             </tr>
           </thead>
           <tbody class="bg-surface-container-lowest">
-            ${rows || `<tr><td colspan="5" class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">Sin registros</td></tr>`}
+            ${rows || `<tr><td colspan="7" class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">Sin registros</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -1641,6 +1768,31 @@ function renderInventarioDetalleCodigo(list) {
   document.getElementById('invVolverConsolidado')?.addEventListener('click', () => {
     volverConsolidadoInventario();
   });
+
+  const detalleImg = document.getElementById('invDetalleImg');
+  const detalleImgBtn = document.getElementById('invDetalleImgBtn');
+  const detallePlaceholder = document.getElementById('invDetalleImgPlaceholder');
+  if (detalleImg && detalleImgBtn && imgUrl) {
+    const showDetalleImg = (ok) => {
+      if (ok) {
+        detalleImg.classList.remove('hidden');
+        detallePlaceholder?.classList.add('hidden');
+        detalleImgBtn.disabled = false;
+      } else {
+        detalleImg.classList.add('hidden');
+        detallePlaceholder?.classList.remove('hidden');
+        detalleImgBtn.disabled = true;
+      }
+    };
+    detalleImg.addEventListener('load', () => showDetalleImg(true));
+    detalleImg.addEventListener('error', () => showDetalleImg(false));
+    detalleImgBtn.addEventListener('click', () => {
+      if (detalleImgBtn.disabled) return;
+      openImagenLightbox(imgUrl, codigo);
+    });
+    // Asigna src después de los listeners para no perder el evento load
+    detalleImg.src = imgUrl;
+  }
 
   list.querySelectorAll('.editDevolucionBtn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1714,7 +1866,10 @@ function renderInventarioView() {
     <div id="inventarioTotalesBar" class="fixed bottom-16 inset-x-0 z-40 border-t border-outline-variant bg-surface-container-lowest shadow-[0_-2px_10px_rgba(0,0,0,0.06)]">
       <div class="h-11 flex items-stretch text-on-surface">
         <div class="inv-excel-total-label shrink-0 flex items-center justify-center px-2 border-r border-surface-container-high font-label-sm text-label-sm font-black bg-surface-container-lowest">Total</div>
-        <div class="flex-1 border-r border-surface-container-low bg-surface-container-lowest"></div>
+        <div class="flex-1 flex items-center justify-end gap-3 px-3 border-r border-surface-container-low bg-surface-container-lowest min-w-0">
+          <span class="font-label-sm text-label-sm text-on-surface-variant shrink-0">Costo</span>
+          <span id="totalCosto" class="font-code-md text-code-md font-black tabular-nums text-primary truncate">${formatCosto(state.inventario.totales.costo || 0)}</span>
+        </div>
         <div class="inv-excel-total-value shrink-0 min-w-[4.5rem] flex items-center justify-center px-3 border-l border-surface-container-high font-code-md text-code-md font-black tabular-nums bg-surface-container-lowest">
           <span id="totalCantidad">${state.inventario.totales.registros || 0}</span>
         </div>
@@ -1724,6 +1879,7 @@ function renderInventarioView() {
     ${toastHtml()}
     ${tiendaModalHtml()}
     ${editDevolucionModalHtml()}
+    ${imagenLightboxHtml()}
   </main>
   ${navHtml()}
   `;
@@ -1733,6 +1889,7 @@ function renderInventarioView() {
   bindInventarioEvents();
   bindTiendaModalEvents();
   bindEditDevolucionEvents();
+  bindImagenLightboxEvents();
   loadInventario();
   if (!state.sucursales.length || !state.estatus.length) {
     loadCatalogos()
@@ -1747,10 +1904,18 @@ function renderInventarioView() {
 }
 
 function renderInventarioTotalesRow() {
-  // "Total" = conteo de escaneos (antes etiqueta "Registros")
+  // "Total" = conteo de escaneos + suma de costo unitario guardado por escaneo
   const value = String(state.inventario.totales.registros || 0);
   const totalCant = document.getElementById('totalCantidad');
   if (totalCant) totalCant.textContent = value;
+  const totalCosto = document.getElementById('totalCosto');
+  if (totalCosto) {
+    const items = state.inventario.items || [];
+    const costo =
+      state.inventario.totales.costo ??
+      items.reduce((sum, it) => sum + itemCurrCost(it), 0);
+    totalCosto.textContent = formatCosto(costo);
+  }
 }
 
 function bindInventarioEvents() {
@@ -1860,10 +2025,13 @@ function renderTriageView() {
                 <span class="font-code-sm text-code-sm text-on-surface-variant font-medium">Código de producto <span id="productoArticulo"></span></span>
                 <span class="font-code-sm text-code-sm bg-surface-container px-1.5 py-0.5 rounded-DEFAULT text-on-secondary-container" id="productoCodigoBarra"></span>
               </div>
-              <div class="flex items-center gap-1 text-on-surface-variant mt-1">
+              <div class="flex items-center gap-1 text-on-surface-variant mt-1 flex-wrap">
                 <span class="material-symbols-outlined text-[15px] text-tertiary">inventory_2</span>
                 <span class="font-body-sm text-body-sm truncate">
                   Cantidad: <span id="productoCantidad"></span> <span id="productoUdm"></span>
+                </span>
+                <span class="font-body-sm text-body-sm text-primary font-semibold">
+                  · Costo/u: <span id="productoCurrCost">—</span>
                 </span>
               </div>
             </div>

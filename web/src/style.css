@@ -3,7 +3,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Tabla inventario: N° y Código fijos al deslizar */
+/* Tabla inventario: columnas fijas al deslizar (consolidado: N° + Código) */
 .inv-sticky-n {
   position: sticky;
   left: 0;
@@ -11,6 +11,7 @@ body {
   background: #ffffff;
   min-width: 3.25rem;
   width: 3.25rem;
+  overflow: hidden;
 }
 
 .inv-sticky-codigo {
@@ -23,9 +24,10 @@ body {
   min-width: 6.75rem;
   max-width: 6.75rem;
   box-shadow: none;
+  overflow: hidden;
 }
 
-/* SKU fijo en detalle (sin N°) */
+/* Código de barra fijo en detalle (solo esta columna sticky) */
 .inv-sticky-sku {
   position: sticky;
   left: 0;
@@ -35,10 +37,11 @@ body {
   width: 7.5rem;
   min-width: 7.5rem;
   max-width: 7.5rem;
-  box-shadow: none;
+  box-shadow: 4px 0 8px -4px rgba(11, 28, 48, 0.18);
+  overflow: hidden;
 }
 
-/* Cant. fija al lado de Código (consolidado) o de SKU (detalle) */
+/* Cant. fija (historial/detalle legacy si se usa) */
 .inv-sticky-cant {
   position: sticky;
   left: 6.75rem;
@@ -49,6 +52,7 @@ body {
   min-width: 4.25rem;
   max-width: 4.25rem;
   box-shadow: 4px 0 8px -4px rgba(11, 28, 48, 0.18);
+  overflow: hidden;
 }
 
 th .invSortBtn {
@@ -74,17 +78,9 @@ th .invSortBtn .material-symbols-outlined {
   box-shadow: none;
 }
 
-/* N° + Código + Cant. (consolidado inventario) */
+/* N° + Código + Cant. */
 .inv-sticky-n + .inv-sticky-codigo + .inv-sticky-cant {
   left: calc(3.25rem + 6.75rem);
-}
-
-thead .inv-sticky-n,
-thead .inv-sticky-codigo,
-thead .inv-sticky-sku,
-thead .inv-sticky-cant {
-  z-index: 4;
-  background: #e8eef8;
 }
 
 #inventarioTableWrap,
@@ -136,19 +132,29 @@ body.inv-lock-scroll #app {
   border-radius: 999px;
 }
 
-#inventarioDataTable thead th {
+/* Títulos: sticky vertical; las columnas fijas deben quedar ENCIMA al scroll horizontal */
+#inventarioDataTable thead th,
+#historialDataTable thead th {
   position: sticky;
   top: 0;
-  z-index: 5;
+  z-index: 2;
   background: #e8eef8;
+  background-clip: padding-box;
 }
 
-thead .inv-sticky-n,
-thead .inv-sticky-codigo,
-thead .inv-sticky-sku,
-thead .inv-sticky-cant {
+/* Esquina fija (top + left): z-index más alto para que no se sobrepongan los títulos */
+#inventarioDataTable thead .inv-sticky-n,
+#inventarioDataTable thead .inv-sticky-codigo,
+#inventarioDataTable thead .inv-sticky-sku,
+#inventarioDataTable thead .inv-sticky-cant,
+#historialDataTable thead .inv-sticky-n,
+#historialDataTable thead .inv-sticky-codigo,
+#historialDataTable thead .inv-sticky-sku,
+#historialDataTable thead .inv-sticky-cant {
   top: 0;
-  z-index: 6;
+  z-index: 8;
+  background: #e8eef8;
+  background-clip: padding-box;
 }
 
 #inventarioTotalesBar .inv-excel-total-label {

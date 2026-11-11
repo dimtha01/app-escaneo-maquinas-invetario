@@ -39,6 +39,7 @@ db.exec(`
     itemdesc TEXT NOT NULL,
     cantidad REAL NOT NULL DEFAULT 1,
     udm TEXT NOT NULL DEFAULT 'UND',
+    currcost REAL NOT NULL DEFAULT 0,
     creado_en TEXT NOT NULL DEFAULT (datetime('now')),
     actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -99,6 +100,14 @@ if (!devolucionCols.includes('orden')) {
 }
 if (!devolucionCols.includes('sesion_id')) {
   db.exec('ALTER TABLE devoluciones ADD COLUMN sesion_id INTEGER');
+}
+if (!devolucionCols.includes('currcost')) {
+  db.exec('ALTER TABLE devoluciones ADD COLUMN currcost REAL');
+}
+
+const productoColsNow = tableColumns('productos');
+if (productoColsNow.length && !productoColsNow.includes('currcost')) {
+  db.exec('ALTER TABLE productos ADD COLUMN currcost REAL DEFAULT 0');
 }
 
 db.exec(`
@@ -232,7 +241,7 @@ ensureTiendasT01T49();
 ensureEstatusBase();
 seedProductosIfEmpty();
 
-/** Normaliza fila DB → shape CEDIS */
+/** Normaliza fila DB → shape CEDIS/CORP */
 export function toCedisProducto(row) {
   if (!row) return null;
   return {
@@ -242,6 +251,7 @@ export function toCedisProducto(row) {
     ITEMDESC: String(row.itemdesc ?? '').trim(),
     Cantidad: Number(row.cantidad ?? 1),
     UdM: String(row.udm ?? 'UND').trim(),
+    CurrCost: Number(row.currcost ?? row.CurrCost ?? 0),
   };
 }
 

@@ -19,6 +19,7 @@ const listSql = `
     d.itemdesc AS ITEMDESC,
     d.cantidad AS Cantidad,
     d.udm AS UdM,
+    d.currcost AS CurrCost,
     d.notas,
     d.creado_en,
     d.sucursal_id,
@@ -191,6 +192,8 @@ router.post('/', (req, res) => {
     ITEMDESC,
     Cantidad,
     UdM,
+    CurrCost,
+    currcost,
   } = req.body ?? {};
 
   if (!codigo || !sucursal_id || !estatus_id) {
@@ -235,6 +238,8 @@ router.post('/', (req, res) => {
   // Cada código escaneado cuenta como 1 (no usar Cantidad CEDIS)
   const cantidad = 1;
   const udm = String(UdM ?? producto?.udm ?? 'UND').trim() || 'UND';
+  const costoRaw = CurrCost ?? currcost ?? producto?.currcost ?? 0;
+  const costoUnitario = Number.isFinite(Number(costoRaw)) ? Number(costoRaw) : 0;
 
   const sesion = getOrCreateSesionActiva();
 
@@ -245,8 +250,8 @@ router.post('/', (req, res) => {
     const result = db
       .prepare(
         `INSERT INTO devoluciones
-          (producto_id, codigo_escaneado, articulo, codigo_barra, itemdesc, cantidad, udm, sucursal_id, estatus_id, sesion_id, orden, notas, creado_en)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))`
+          (producto_id, codigo_escaneado, articulo, codigo_barra, itemdesc, cantidad, udm, currcost, sucursal_id, estatus_id, sesion_id, orden, notas, creado_en)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))`
       )
       .run(
         producto?.id ?? null,
@@ -256,6 +261,7 @@ router.post('/', (req, res) => {
         itemdesc,
         cantidad,
         udm,
+        costoUnitario,
         sucursal.id,
         estatus.id,
         sesion.id,
