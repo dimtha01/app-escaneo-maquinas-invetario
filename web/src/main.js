@@ -365,7 +365,6 @@ function renderHistorial() {
       const tienda = item.sucursal_codigo || item.sucursal_nombre || '—';
       const estatus = item.estatus_nombre || '—';
       const n = item.orden ?? '—';
-      const costo = formatCosto(item.CurrCost);
       return `
       <tr class="border-b border-surface-container-low hover:bg-surface-container-low/80" data-devolucion-id="${escapeHtml(item.id)}">
         <td class="inv-sticky-n px-1 py-1.5 align-middle text-center border-r border-surface-container-high">
@@ -379,9 +378,6 @@ function renderHistorial() {
         </td>
         <td class="px-1.5 py-1.5 align-middle whitespace-nowrap">
           <span class="font-code-sm text-code-sm font-bold text-on-surface">${escapeHtml(sku)}</span>
-        </td>
-        <td class="px-1.5 py-1.5 align-middle whitespace-nowrap text-right">
-          <span class="font-code-sm text-code-sm font-bold text-primary tabular-nums">${escapeHtml(costo)}</span>
         </td>
         <td class="px-1.5 py-1.5 align-middle whitespace-nowrap">
           <span class="inline-flex items-center rounded-md bg-primary-fixed text-on-primary-fixed px-1.5 py-0.5 font-code-sm text-code-sm font-bold">${escapeHtml(tienda)}</span>
@@ -406,14 +402,13 @@ function renderHistorial() {
   list.innerHTML = `
     <div id="historialTableWrap" class="m-0 p-0 border-y border-outline-variant bg-surface-container-lowest overflow-hidden">
       <div class="overflow-x-auto overscroll-x-contain touch-pan-x m-0 p-0" id="historialTableScroll">
-        <table class="w-full min-w-[780px] border-collapse text-left m-0" id="historialDataTable">
+        <table class="w-full min-w-[700px] border-collapse text-left m-0" id="historialDataTable">
           <thead>
             <tr class="bg-surface-container">
               <th class="inv-sticky-n px-1 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high text-center">N°</th>
               <th class="inv-sticky-codigo px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide border-r border-surface-container-high leading-tight">Código de producto</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Descripción</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide leading-tight">Código de barra</th>
-              <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap text-right">Costo/u</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Tienda</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Estatus</th>
               <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold w-16"></th>
@@ -711,8 +706,6 @@ function renderProductoCard() {
     state.producto.Cantidad ?? 1
   );
   document.getElementById('productoUdm').textContent = state.producto.UdM || 'UND';
-  const costEl = document.getElementById('productoCurrCost');
-  if (costEl) costEl.textContent = formatCosto(state.producto.CurrCost);
 }
 
 function pickerHtml({ key, icon = 'list', placeholder = 'Seleccionar', modal = false }) {
@@ -1690,16 +1683,6 @@ function renderInventarioDetalleCodigo(list) {
         <td class="px-1.5 py-1.5 align-middle min-w-[110px]">
           <span class="font-label-sm text-label-sm text-on-surface font-semibold">${escapeHtml(estatus)}</span>
         </td>
-        <td class="px-2 py-1.5 align-middle whitespace-nowrap text-right">
-          <div class="inline-flex items-center gap-0.5">
-            <button type="button" class="editDevolucionBtn h-8 w-8 rounded-lg text-primary hover:bg-primary-fixed/40 inline-flex items-center justify-center" data-id="${escapeHtml(item.id)}" aria-label="Editar #${escapeHtml(item.orden ?? item.id)}">
-              <span class="material-symbols-outlined text-[18px]">edit</span>
-            </button>
-            <button type="button" class="deleteDevolucionBtn h-8 w-8 rounded-lg text-error hover:bg-error-container/30 inline-flex items-center justify-center" data-id="${escapeHtml(item.id)}" data-orden="${escapeHtml(item.orden ?? item.id)}" aria-label="Eliminar #${escapeHtml(item.orden ?? item.id)}">
-              <span class="material-symbols-outlined text-[18px]">delete</span>
-            </button>
-          </div>
-        </td>
       </tr>`;
     })
     .join('');
@@ -1755,11 +1738,10 @@ function renderInventarioDetalleCodigo(list) {
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap text-right">Costo total</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Tienda</th>
               <th class="px-1.5 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold uppercase tracking-wide whitespace-nowrap">Estatus</th>
-              <th class="px-2 py-1.5 font-label-sm text-label-sm text-on-surface-variant font-bold w-16"></th>
             </tr>
           </thead>
           <tbody class="bg-surface-container-lowest">
-            ${rows || `<tr><td colspan="7" class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">Sin registros</td></tr>`}
+            ${rows || `<tr><td colspan="6" class="p-4 text-center text-on-surface-variant font-body-sm text-body-sm">Sin registros</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -1793,17 +1775,6 @@ function renderInventarioDetalleCodigo(list) {
     // Asigna src después de los listeners para no perder el evento load
     detalleImg.src = imgUrl;
   }
-
-  list.querySelectorAll('.editDevolucionBtn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      openEditDevolucion(btn.dataset.id);
-    });
-  });
-  list.querySelectorAll('.deleteDevolucionBtn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      eliminarDevolucion(btn.dataset.id, btn.dataset.orden);
-    });
-  });
 }
 
 async function descargarReporteInventario() {
@@ -2025,13 +1996,10 @@ function renderTriageView() {
                 <span class="font-code-sm text-code-sm text-on-surface-variant font-medium">Código de producto <span id="productoArticulo"></span></span>
                 <span class="font-code-sm text-code-sm bg-surface-container px-1.5 py-0.5 rounded-DEFAULT text-on-secondary-container" id="productoCodigoBarra"></span>
               </div>
-              <div class="flex items-center gap-1 text-on-surface-variant mt-1 flex-wrap">
+              <div class="flex items-center gap-1 text-on-surface-variant mt-1">
                 <span class="material-symbols-outlined text-[15px] text-tertiary">inventory_2</span>
                 <span class="font-body-sm text-body-sm truncate">
                   Cantidad: <span id="productoCantidad"></span> <span id="productoUdm"></span>
-                </span>
-                <span class="font-body-sm text-body-sm text-primary font-semibold">
-                  · Costo/u: <span id="productoCurrCost">—</span>
                 </span>
               </div>
             </div>
