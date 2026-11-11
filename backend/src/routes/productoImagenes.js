@@ -10,6 +10,12 @@ import {
   isApifyConfigured,
   searchGoogleImagesBatch,
 } from '../services/apifyGoogleImages.js';
+import {
+  ALLOWED_IMAGE_MIME,
+  WEBP_MIME,
+  ensureProductoImagenWebp,
+  webpFilenameForCodigo,
+} from '../services/imageWebp.js';
 
 const router = Router();
 const imagenesDir = getProductoImagenesDir();
@@ -17,8 +23,6 @@ const imagenesDir = getProductoImagenesDir();
 const enhanceInFlight = new Set();
 /** Job en memoria para búsqueda Google masiva. */
 let googleJob = null;
-
-const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 function normalizeCodigo(raw) {
   return String(raw || '')
@@ -30,28 +34,26 @@ function routeLog(_hypothesisId, _location, message, data = {}) {
   console.log(`[IMG] ${message}${Object.keys(data).length ? ` ${JSON.stringify(data)}` : ''}`);
 }
 
+/** Guarda upload temporal; luego se convierte siempre a .webp */
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, imagenesDir),
   filename: (req, file, cb) => {
     const codigo = normalizeCodigo(req.params.codigo);
-    const ext =
-      file.mimetype === 'image/png'
-        ? '.png'
-        : file.mimetype === 'image/webp'
-          ? '.webp'
-          : file.mimetype === 'image/gif'
-            ? '.gif'
-            : '.jpg';
-    cb(null, `${codigo}${ext}`);
+    const origExt = path.extname(file.originalname || '').toLowerCase() || '.bin';
+    cb(null, `${codigo}.upload${origExt}`);
   },
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    if (!ALLOWED_MIME.has(file.mimetype)) {
-      cb(new Error('Solo se permiten imágenes JPG, PNG, WEBP o GIF'));
+    if (!ALLOWED_IMAGE_MIME.has(file.mimetype)) {
+      cb(
+        new Error(
+          'Formato no soportado. Sube JPG, PNG, WEBP, GIF, BMP, TIFF, AVIF o HEIC; se convertirá a WebP.'
+        )
+      );
       return;
     }
     cb(null, true);
@@ -234,11 +236,17 @@ router.post('/buscar-google', async (req, res) => {
             imagenesDir,
             normalizeCodigo(p.codigo)
           );
+          const webp = await ensureProductoImagenWebp({
+            codigo: p.codigo,
+            srcPath: saved.path,
+            destDir: imagenesDir,
+            unlinkSrc: true,
+          });
           // limpia archivo previo con otra extensión
           const prev = db
             .prepare(`SELECT filename FROM producto_imagenes WHERE codigo = ?`)
             .get(p.codigo);
-          if (prev?.filename && prev.filename !== saved.filename) {
+          if (prev?.filename && prev.filename !== webp.filename) {
             unlinkQuiet(path.join(imagenesDir, prev.filename));
           }
           db.prepare(
@@ -249,13 +257,18 @@ router.post('/buscar-google', async (req, res) => {
                mime = excluded.mime,
                original_name = excluded.original_name,
                actualizado_en = excluded.actualizado_en`
-          ).run(p.codigo, saved.filename, saved.mime, `google:${first.imageUrl.slice(0, 180)}`);
+          ).run(
+            p.codigo,
+            webp.filename,
+            webp.mime,
+            `google:${first.imageUrl.slice(0, 180)}`
+          );
           googleJob.totales.aplicadas += 1;
           if (itemState) {
             itemState.applied = true;
             itemState.status = 'applied';
           }
-          console.log(`[IMG] google applied ${p.codigo} bytes=${saved.bytes}`);
+          console.log(`[IMG] google applied ${p.codigo} bytes=${webp.bytes} mime=${webp.mime}`);
         } catch (err) {
           googleJob.totales.errores += 1;
           if (itemState) {
@@ -483,8 +496,8 @@ router.post('/:codigo/enhance', async (req, res) => {
   });
 });
 
-/** Acepta la preview IA y reemplaza la imagen original. */
-router.post('/:codigo/enhance/accept', (req, res) => {
+/** Acepta la preview IA y reemplaza la imagen original (siempre WebP). */
+router.post('/:codigo/enhance/accept', async (req, res) => {
   const db = getDb();
   const codigo = String(req.params.codigo || '').trim();
   routeLog('H4', 'productoImagenes.js:accept', 'accept preview', { codigo });
@@ -503,12 +516,17 @@ router.post('/:codigo/enhance/accept', (req, res) => {
     return res.status(404).json({ error: 'No hay preview IA para aceptar' });
   }
 
-  const finalName = `${normalizeCodigo(codigo)}.jpg`;
+  const finalName = webpFilenameForCodigo(codigo);
   const finalPath = path.join(imagenesDir, finalName);
   const oldPath = path.join(imagenesDir, row.filename);
 
   try {
-    fs.copyFileSync(previewPath, finalPath);
+    await ensureProductoImagenWebp({
+      codigo,
+      srcPath: previewPath,
+      destDir: imagenesDir,
+      unlinkSrc: false,
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'No se pudo guardar la imagen IA' });
   }
@@ -519,7 +537,7 @@ router.post('/:codigo/enhance/accept', (req, res) => {
     `UPDATE producto_imagenes
      SET filename = ?, mime = ?, actualizado_en = datetime('now', 'localtime')
      WHERE codigo = ?`
-  ).run(finalName, 'image/jpeg', codigo);
+  ).run(finalName, WEBP_MIME, codigo);
 
   const updated = db
     .prepare(
@@ -571,12 +589,25 @@ router.post('/:codigo', (req, res) => {
       return res.status(400).json({ error: 'Código inválido' });
     }
 
-    const mime = req.file.mimetype;
+    let webp;
+    try {
+      webp = await ensureProductoImagenWebp({
+        codigo,
+        srcPath: req.file.path,
+        destDir: imagenesDir,
+        unlinkSrc: true,
+      });
+    } catch (convErr) {
+      unlinkQuiet(req.file.path);
+      return res.status(400).json({
+        error: convErr.message || 'No se pudo convertir la imagen a WebP',
+      });
+    }
 
     const prev = db
       .prepare(`SELECT filename FROM producto_imagenes WHERE codigo = ?`)
       .get(codigo);
-    if (prev?.filename && prev.filename !== req.file.filename) {
+    if (prev?.filename && prev.filename !== webp.filename) {
       unlinkQuiet(path.join(imagenesDir, prev.filename));
     }
     unlinkQuiet(previewPathFor(codigo));
@@ -589,7 +620,7 @@ router.post('/:codigo', (req, res) => {
          mime = excluded.mime,
          original_name = excluded.original_name,
          actualizado_en = excluded.actualizado_en`
-    ).run(codigo, req.file.filename, mime, req.file.originalname || null);
+    ).run(codigo, webp.filename, webp.mime, req.file.originalname || null);
 
     const row = db
       .prepare(
@@ -605,6 +636,7 @@ router.post('/:codigo', (req, res) => {
       actualizadoEn: row.actualizado_en,
       enhanced: false,
       enhanceMethod: null,
+      convertedToWebp: true,
       imagenUrl: `/api/producto-imagenes/${encodeURIComponent(codigo)}/file?t=${encodeURIComponent(row.actualizado_en || '')}`,
     });
   });

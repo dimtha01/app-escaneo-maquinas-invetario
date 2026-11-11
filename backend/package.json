@@ -8,7 +8,9 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "backfill:currcost": "node scripts/backfill-currcost.js",
-    "backfill:currcost:dry": "node scripts/backfill-currcost.js --dry-run"
+    "backfill:currcost:dry": "node scripts/backfill-currcost.js --dry-run",
+    "convert:webp": "node scripts/convert-imagenes-webp.js",
+    "convert:webp:dry": "node scripts/convert-imagenes-webp.js --dry-run"
   },
   "keywords": [],
   "author": "",
@@ -22,6 +24,7 @@
     "express": "^5.1.0",
     "mssql": "^12.7.14",
     "multer": "^2.5.0",
+    "sharp": "^0.34.4",
     "undici": "^7.30.2"
   }
 }
